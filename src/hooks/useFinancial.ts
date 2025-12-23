@@ -47,6 +47,7 @@ export const useCreateTransaction = () => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['transactions'] });
             queryClient.invalidateQueries({ queryKey: ['financial-metrics'] });
+            queryClient.invalidateQueries({ queryKey: ['cash-flow-history'] });
             toast({ title: 'Transação criada com sucesso!' });
         },
         onError: (error) => {
@@ -74,6 +75,7 @@ export const useUpdateTransaction = () => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['transactions'] });
             queryClient.invalidateQueries({ queryKey: ['financial-metrics'] });
+            queryClient.invalidateQueries({ queryKey: ['cash-flow-history'] });
             toast({ title: 'Transação atualizada com sucesso!' });
         },
         onError: (error) => {
@@ -98,6 +100,7 @@ export const useDeleteTransaction = () => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['transactions'] });
             queryClient.invalidateQueries({ queryKey: ['financial-metrics'] });
+            queryClient.invalidateQueries({ queryKey: ['cash-flow-history'] });
             toast({ title: 'Transação excluída com sucesso!' });
         },
         onError: (error) => {
@@ -123,6 +126,7 @@ export const useBulkCreateTransactions = () => {
         onSuccess: (data) => {
             queryClient.invalidateQueries({ queryKey: ['transactions'] });
             queryClient.invalidateQueries({ queryKey: ['financial-metrics'] });
+            queryClient.invalidateQueries({ queryKey: ['cash-flow-history'] });
             toast({ title: `${data?.length || 0} transações importadas com sucesso!` });
         },
         onError: (error) => {
