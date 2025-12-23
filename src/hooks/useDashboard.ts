@@ -168,7 +168,7 @@ const calculateMetrics = (
   const ltv = ticketMedio * estimatedLifetimeMonths;
 
   // Faturamento Real - Calculate actual revenue received in the period
-  // For each month in the period, calculate what was actually billed
+  // Faturamento Real = MRR (normalized monthly revenue) + One-time sales (produtos únicos)
   const months = eachMonthOfInterval({ start: startDate, end: endDate });
 
   let faturamentoReal = 0;
@@ -177,22 +177,20 @@ const calculateMetrics = (
     const monthStart = startOfMonth(month);
     const monthEnd = endOfMonth(month);
 
-    // New clients in this month pay full price
+    // Calculate MRR for this month (all recurring products, new and existing)
     clients.forEach(client => {
       if (!client.products) return;
-      const clientStartDate = parseISO(client.start_date);
+      if (!wasClientActiveAt(client, monthEnd)) return;
 
-      // Check if client started in this month
-      if (isWithinInterval(clientStartDate, { start: monthStart, end: monthEnd })) {
-        // New client - pays full price (annual pays full annual, monthly pays monthly)
-        faturamentoReal += Number(client.products.price);
-      } else if (wasClientActiveAt(client, monthEnd) && clientStartDate < monthStart) {
-        // Existing active client - pays recurring
-        if (client.products.billing_period === 'mensal') {
+      // Only count recurring products for MRR portion
+      if (isRecurringProduct(client.products)) {
+        // All active clients with recurring products: normalize to monthly value
+        faturamentoReal += getMonthlyPrice(Number(client.products.price), client.products.billing_period);
+      } else {
+        // One-time payment products: only count in the month they started
+        const clientStartDate = parseISO(client.start_date);
+        if (isWithinInterval(clientStartDate, { start: monthStart, end: monthEnd })) {
           faturamentoReal += Number(client.products.price);
-        } else if (client.products.billing_period === 'anual') {
-          // Annual clients: normalize by dividing by 12 for monthly view
-          faturamentoReal += Number(client.products.price) / 12;
         }
       }
     });
@@ -202,20 +200,17 @@ const calculateMetrics = (
       if (!addon.products) return;
       const client = clients.find(c => c.id === addon.client_id);
       if (!client || !wasClientActiveAt(client, monthEnd)) return;
+      if (!wasAddonActiveAt(addon, monthEnd)) return;
 
-      const addonStartDate = parseISO(addon.start_date);
-
-      // Check if addon started in this month
-      if (isWithinInterval(addonStartDate, { start: monthStart, end: monthEnd })) {
-        // New addon - pays full price
-        faturamentoReal += Number(addon.products.price) * addon.quantity;
-      } else if (wasAddonActiveAt(addon, monthEnd) && addonStartDate < monthStart) {
-        // Existing active addon - pays recurring
-        if (addon.products.billing_period === 'mensal') {
+      // Only count recurring addons for MRR portion
+      if (isRecurringProduct(addon.products)) {
+        // All active addons with recurring products: normalize to monthly value
+        faturamentoReal += getMonthlyPrice(Number(addon.products.price), addon.products.billing_period) * addon.quantity;
+      } else {
+        // One-time payment addons: only count in the month they started
+        const addonStartDate = parseISO(addon.start_date);
+        if (isWithinInterval(addonStartDate, { start: monthStart, end: monthEnd })) {
           faturamentoReal += Number(addon.products.price) * addon.quantity;
-        } else if (addon.products.billing_period === 'anual') {
-          // Annual add-ons: normalize by dividing by 12 for monthly view
-          faturamentoReal += (Number(addon.products.price) / 12) * addon.quantity;
         }
       }
     });
