@@ -63,7 +63,8 @@ export interface DashboardMetrics {
   newMrr: number;
   churnedMrr: number;
   churnRateMonthly: number;
-  grossMargin: number;  // Margem Bruta %
+  grossMargin: number;  // Margem Bruta % (Faturamento - CAC)
+  netMargin: number;    // Margem Líquida % (Faturamento - Todas as despesas)
   averageNewClientsLast6Months?: number; // Média de novos clientes nos últimos 6 meses
 }
 

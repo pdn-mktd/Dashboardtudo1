@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react';
-import { Plus, Upload, Download, Pencil, Trash2, Filter, X } from 'lucide-react';
+import { useState, useRef, useMemo } from 'react';
+import { Plus, Upload, Download, Pencil, Trash2, Filter, X, Search, CheckSquare, Tag } from 'lucide-react';
 import { format } from 'date-fns';
 import { Layout } from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
@@ -44,6 +44,8 @@ import {
     useUpdateTransaction,
     useDeleteTransaction,
     useBulkCreateTransactions,
+    useBulkUpdateTransactions,
+    useBulkDeleteTransactions,
     useCategoryRules,
     parseCSV,
     detectCSVColumns,
@@ -51,6 +53,7 @@ import {
     parseDate,
     applyCategoryRules,
     generateImportHash,
+    mapCSVCategory,
 } from '@/hooks/useFinancial';
 import {
     Transaction,
@@ -106,6 +109,8 @@ export default function Transactions() {
     const updateTransaction = useUpdateTransaction();
     const deleteTransaction = useDeleteTransaction();
     const bulkCreate = useBulkCreateTransactions();
+    const bulkUpdate = useBulkUpdateTransactions();
+    const bulkDelete = useBulkDeleteTransactions();
 
     const [formOpen, setFormOpen] = useState(false);
     const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
@@ -117,6 +122,14 @@ export default function Transactions() {
     const [filterCategory, setFilterCategory] = useState<string>('all');
     const [filterType, setFilterType] = useState<string>('all');
     const [filterIsCac, setFilterIsCac] = useState<string>('all');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [filterDateStart, setFilterDateStart] = useState('');
+    const [filterDateEnd, setFilterDateEnd] = useState('');
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [bulkEditDialogOpen, setBulkEditDialogOpen] = useState(false);
+    const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+    const [bulkCategory, setBulkCategory] = useState<string>('');
+    const [bulkIsCac, setBulkIsCac] = useState<boolean | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const itemsPerPage = 15;
 
@@ -135,19 +148,93 @@ export default function Transactions() {
 
     const transactionType = form.watch('type');
 
-    // Filter transactions
-    const filteredTransactions = transactions?.filter(t => {
-        if (filterCategory !== 'all' && t.category !== filterCategory) return false;
-        if (filterType !== 'all' && t.type !== filterType) return false;
-        if (filterIsCac === 'yes' && !t.is_cac) return false;
-        if (filterIsCac === 'no' && t.is_cac) return false;
-        return true;
-    }) || [];
+    // Filter transactions with search, date range, and other filters
+    const filteredTransactions = useMemo(() => {
+        if (!transactions) return [];
+
+        return transactions.filter(t => {
+            // Search filter
+            if (searchQuery) {
+                const query = searchQuery.toLowerCase();
+                const matchesSearch =
+                    t.description.toLowerCase().includes(query) ||
+                    (CATEGORY_LABELS[t.category as TransactionCategory] || '').toLowerCase().includes(query);
+                if (!matchesSearch) return false;
+            }
+
+            // Date range filter
+            if (filterDateStart && t.date < filterDateStart) return false;
+            if (filterDateEnd && t.date > filterDateEnd) return false;
+
+            // Other filters
+            if (filterCategory !== 'all' && t.category !== filterCategory) return false;
+            if (filterType !== 'all' && t.type !== filterType) return false;
+            if (filterIsCac === 'yes' && !t.is_cac) return false;
+            if (filterIsCac === 'no' && t.is_cac) return false;
+            return true;
+        });
+    }, [transactions, searchQuery, filterDateStart, filterDateEnd, filterCategory, filterType, filterIsCac]);
 
     const paginatedTransactions = filteredTransactions.slice(
         (currentPage - 1) * itemsPerPage,
         currentPage * itemsPerPage
     );
+
+    // Selection handlers
+    const isAllSelected = paginatedTransactions.length > 0 &&
+        paginatedTransactions.every(t => selectedIds.has(t.id));
+
+    const toggleSelectAll = () => {
+        if (isAllSelected) {
+            const newSelected = new Set(selectedIds);
+            paginatedTransactions.forEach(t => newSelected.delete(t.id));
+            setSelectedIds(newSelected);
+        } else {
+            const newSelected = new Set(selectedIds);
+            paginatedTransactions.forEach(t => newSelected.add(t.id));
+            setSelectedIds(newSelected);
+        }
+    };
+
+    const toggleSelect = (id: string) => {
+        const newSelected = new Set(selectedIds);
+        if (newSelected.has(id)) {
+            newSelected.delete(id);
+        } else {
+            newSelected.add(id);
+        }
+        setSelectedIds(newSelected);
+    };
+
+    const clearSelection = () => setSelectedIds(new Set());
+
+    // Bulk action handlers
+    const handleBulkEdit = async () => {
+        const updates: Partial<Transaction> = {};
+        if (bulkCategory) {
+            updates.category = bulkCategory as TransactionCategory;
+        }
+        if (bulkIsCac !== null) {
+            updates.is_cac = bulkIsCac;
+        }
+
+        if (Object.keys(updates).length > 0) {
+            await bulkUpdate.mutateAsync({
+                ids: Array.from(selectedIds),
+                updates
+            });
+            setBulkEditDialogOpen(false);
+            clearSelection();
+            setBulkCategory('');
+            setBulkIsCac(null);
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        await bulkDelete.mutateAsync(Array.from(selectedIds));
+        setBulkDeleteDialogOpen(false);
+        clearSelection();
+    };
 
     const handleEdit = (transaction: Transaction) => {
         setEditingTransaction(transaction);
@@ -212,7 +299,10 @@ export default function Transactions() {
         reader.onload = (e) => {
             const content = e.target?.result as string;
             const { headers, rows } = parseCSV(content);
-            const { dateColumn, descriptionColumn, amountColumn } = detectCSVColumns(headers);
+            const { dateColumn, descriptionColumn, amountColumn, categoryColumn } = detectCSVColumns(headers);
+
+            console.log('CSV Headers:', headers);
+            console.log('Detected columns:', { dateColumn, descriptionColumn, amountColumn, categoryColumn });
 
             const preview = rows.map(row => {
                 const rawDate = row[dateColumn] || '';
@@ -221,8 +311,19 @@ export default function Transactions() {
                 const amount = parseAmount(rawAmount);
                 const date = parseDate(rawDate);
 
-                // Try to categorize automatically
-                const categorization = categoryRules ? applyCategoryRules(description, categoryRules) : null;
+                // First, try to get category from CSV if column exists
+                let categorization: { category: string; is_cac: boolean } | null = null;
+
+                if (categoryColumn >= 0 && row[categoryColumn]) {
+                    const csvCategory = row[categoryColumn].trim();
+                    console.log('CSV Category found:', csvCategory);
+                    categorization = mapCSVCategory(csvCategory);
+                }
+
+                // If no category from CSV, try to categorize automatically using rules
+                if (!categorization && categoryRules) {
+                    categorization = applyCategoryRules(description, categoryRules);
+                }
 
                 return {
                     date,
@@ -257,10 +358,14 @@ export default function Transactions() {
         setFilterCategory('all');
         setFilterType('all');
         setFilterIsCac('all');
+        setSearchQuery('');
+        setFilterDateStart('');
+        setFilterDateEnd('');
         setCurrentPage(1);
     };
 
-    const hasActiveFilters = filterCategory !== 'all' || filterType !== 'all' || filterIsCac !== 'all';
+    const hasActiveFilters = filterCategory !== 'all' || filterType !== 'all' || filterIsCac !== 'all' ||
+        searchQuery !== '' || filterDateStart !== '' || filterDateEnd !== '';
 
     return (
         <Layout>
@@ -297,7 +402,37 @@ export default function Transactions() {
                 </div>
 
                 {/* Filters */}
-                <div className="bg-card rounded-xl border border-border p-4">
+                <div className="bg-card rounded-xl border border-border p-4 space-y-4">
+                    {/* Search and Date Range */}
+                    <div className="flex items-center gap-4 flex-wrap">
+                        <div className="relative flex-1 min-w-[200px]">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <Input
+                                placeholder="Buscar por descrição ou categoria..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="pl-10"
+                            />
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm text-muted-foreground">Período:</span>
+                            <Input
+                                type="date"
+                                value={filterDateStart}
+                                onChange={(e) => setFilterDateStart(e.target.value)}
+                                className="w-[150px]"
+                            />
+                            <span className="text-muted-foreground">até</span>
+                            <Input
+                                type="date"
+                                value={filterDateEnd}
+                                onChange={(e) => setFilterDateEnd(e.target.value)}
+                                className="w-[150px]"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Category and Type Filters */}
                     <div className="flex items-center gap-4 flex-wrap">
                         <div className="flex items-center gap-2">
                             <Filter className="h-4 w-4 text-muted-foreground" />
@@ -341,6 +476,42 @@ export default function Transactions() {
                             </Button>
                         )}
                     </div>
+
+                    {/* Bulk Actions Bar */}
+                    {selectedIds.size > 0 && (
+                        <div className="flex items-center gap-3 p-3 bg-primary/10 rounded-lg border border-primary/20">
+                            <CheckSquare className="h-5 w-5 text-primary" />
+                            <span className="text-sm font-medium text-primary">
+                                {selectedIds.size} transação(ões) selecionada(s)
+                            </span>
+                            <div className="flex-1" />
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setBulkEditDialogOpen(true)}
+                                className="gap-2"
+                            >
+                                <Tag className="h-4 w-4" />
+                                Editar Categoria/CAC
+                            </Button>
+                            <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => setBulkDeleteDialogOpen(true)}
+                                className="gap-2"
+                            >
+                                <Trash2 className="h-4 w-4" />
+                                Excluir Selecionados
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={clearSelection}
+                            >
+                                Cancelar
+                            </Button>
+                        </div>
+                    )}
                 </div>
 
                 {/* Table */}
@@ -364,6 +535,13 @@ export default function Transactions() {
                             <Table>
                                 <TableHeader>
                                     <TableRow>
+                                        <TableHead className="w-[50px]">
+                                            <Checkbox
+                                                checked={isAllSelected}
+                                                onCheckedChange={toggleSelectAll}
+                                                aria-label="Selecionar todos"
+                                            />
+                                        </TableHead>
                                         <TableHead>Data</TableHead>
                                         <TableHead>Descrição</TableHead>
                                         <TableHead>Categoria</TableHead>
@@ -375,7 +553,17 @@ export default function Transactions() {
                                 </TableHeader>
                                 <TableBody>
                                     {paginatedTransactions.map((transaction) => (
-                                        <TableRow key={transaction.id}>
+                                        <TableRow
+                                            key={transaction.id}
+                                            className={selectedIds.has(transaction.id) ? 'bg-primary/5' : ''}
+                                        >
+                                            <TableCell>
+                                                <Checkbox
+                                                    checked={selectedIds.has(transaction.id)}
+                                                    onCheckedChange={() => toggleSelect(transaction.id)}
+                                                    aria-label={`Selecionar ${transaction.description}`}
+                                                />
+                                            </TableCell>
                                             <TableCell className="text-muted-foreground">
                                                 {formatDate(transaction.date)}
                                             </TableCell>
@@ -671,6 +859,79 @@ export default function Transactions() {
                         <AlertDialogCancel>Cancelar</AlertDialogCancel>
                         <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
                             Excluir
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            {/* Bulk Edit Dialog */}
+            <Dialog open={bulkEditDialogOpen} onOpenChange={setBulkEditDialogOpen}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Editar {selectedIds.size} Transações</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">Nova Categoria</label>
+                            <Select value={bulkCategory} onValueChange={setBulkCategory}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Selecionar categoria (opcional)" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="">Não alterar</SelectItem>
+                                    {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
+                                        <SelectItem key={value} value={value}>{label}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">Custo de Aquisição (CAC)</label>
+                            <Select
+                                value={bulkIsCac === null ? '' : bulkIsCac ? 'yes' : 'no'}
+                                onValueChange={(v) => setBulkIsCac(v === '' ? null : v === 'yes')}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Selecionar (opcional)" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="">Não alterar</SelectItem>
+                                    <SelectItem value="yes">Marcar como CAC</SelectItem>
+                                    <SelectItem value="no">Remover CAC</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+                    <div className="flex justify-end gap-3">
+                        <Button variant="outline" onClick={() => setBulkEditDialogOpen(false)}>
+                            Cancelar
+                        </Button>
+                        <Button
+                            onClick={handleBulkEdit}
+                            disabled={bulkUpdate.isPending || (!bulkCategory && bulkIsCac === null)}
+                        >
+                            {bulkUpdate.isPending ? 'Atualizando...' : 'Aplicar Alterações'}
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Bulk Delete Confirmation */}
+            <AlertDialog open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Excluir {selectedIds.size} transações?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Esta ação não pode ser desfeita. Todas as {selectedIds.size} transações selecionadas serão permanentemente removidas.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={handleBulkDelete}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                            {bulkDelete.isPending ? 'Excluindo...' : 'Excluir Transações'}
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>

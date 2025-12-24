@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { DashboardMetrics, Client, Expense, ClientAddon } from '@/types/database';
+import { DashboardMetrics, Client, Expense, ClientAddon, Transaction } from '@/types/database';
 import { startOfMonth, endOfMonth, format, subMonths, parseISO, isWithinInterval, differenceInMonths, isBefore, isAfter, eachMonthOfInterval } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -74,6 +74,7 @@ const calculateMetrics = (
   clients: Client[],
   expenses: Expense[],
   addons: ClientAddon[],
+  transactions: Transaction[],
   startDate: Date,
   endDate: Date
 ): DashboardMetrics => {
@@ -132,18 +133,30 @@ const calculateMetrics = (
   // Monthly average churn rate
   const churnRateMonthly = churnRate / periodMonths;
 
-  // Get expenses within the selected period
+  // Get legacy expenses within the selected period (fallback)
   const periodExpenses = expenses.filter(e => {
     const expenseDate = parseISO(e.month_year);
     return isWithinInterval(expenseDate, { start: startOfMonth(startDate), end: endOfMonth(endDate) });
   });
 
-  const totalExpenses = periodExpenses.reduce((acc, e) => {
+  const legacyTotalExpenses = periodExpenses.reduce((acc, e) => {
     return acc + Number(e.marketing_spend) + Number(e.sales_spend);
   }, 0);
 
-  // CAC (Cost of Acquisition) - total expenses / new clients in period
-  const cac = newClientsThisMonth > 0 ? totalExpenses / newClientsThisMonth : 0;
+  // Get CAC expenses from transactions (is_cac = true)
+  const cacTransactions = transactions.filter(t => {
+    const transactionDate = parseISO(t.date);
+    return t.is_cac === true &&
+      isWithinInterval(transactionDate, { start: startDate, end: endDate });
+  });
+
+  // Sum CAC expenses from transactions (use absolute value since expenses are negative)
+  const totalCacExpenses = cacTransactions.reduce((acc, t) => {
+    return acc + Math.abs(t.amount);
+  }, 0);
+
+  // CAC (Cost of Acquisition) - 100% based on transactions with is_cac = true
+  const cac = newClientsThisMonth > 0 ? totalCacExpenses / newClientsThisMonth : 0;
 
   // LTV (Lifetime Value) Calculation
   // Formula: Ticket Médio × Average Customer Lifetime (in months)
@@ -244,12 +257,28 @@ const calculateMetrics = (
     quickRatio = -1; // Not applicable: no activity
   }
 
-  // Gross Margin - This will be calculated properly when transactions table is set up
-  // For now, a simple calculation: (Revenue - CAC Expenses) / Revenue * 100
-  // CAC expenses = total expenses from the period (marketing + sales)
-  const cacExpenses = totalExpenses; // From expenses table
+  // Gross Margin - (Revenue - CAC Expenses) / Revenue * 100
+  // CAC expenses = transactions with is_cac = true
+  const cacExpenses = totalCacExpenses;
   const grossProfit = faturamentoReal - cacExpenses;
   const grossMargin = faturamentoReal > 0 ? (grossProfit / faturamentoReal) * 100 : 0;
+
+  // Net Margin - Uses ALL expenses from transactions table
+  // Filter transactions within the period and sum all expense amounts (negative values)
+  const periodTransactions = transactions.filter(t => {
+    const transactionDate = parseISO(t.date);
+    return isWithinInterval(transactionDate, { start: startDate, end: endDate });
+  });
+
+  // Sum all expenses (negative amounts) from transactions
+  const totalTransactionExpenses = periodTransactions
+    .filter(t => t.type === 'expense' && t.amount < 0)
+    .reduce((acc, t) => acc + Math.abs(t.amount), 0);
+
+  // Use transaction expenses if available, otherwise fall back to legacy expenses
+  const allExpenses = totalTransactionExpenses > 0 ? totalTransactionExpenses : cacExpenses;
+  const netProfit = faturamentoReal - allExpenses;
+  const netMargin = faturamentoReal > 0 ? (netProfit / faturamentoReal) * 100 : 0;
 
   return {
     mrr,
@@ -269,6 +298,7 @@ const calculateMetrics = (
     churnedMrr,
     churnRateMonthly,
     grossMargin,
+    netMargin,
     averageNewClientsLast6Months,
   };
 };
@@ -284,7 +314,7 @@ export const useDashboard = ({ startDate, endDate }: UseDashboardParams) => {
 
       if (clientsError) throw clientsError;
 
-      // Fetch expenses
+      // Fetch expenses (legacy)
       const { data: expenses, error: expensesError } = await supabase
         .from('expenses')
         .select('*');
@@ -298,11 +328,18 @@ export const useDashboard = ({ startDate, endDate }: UseDashboardParams) => {
 
       if (addonsError) throw addonsError;
 
+      // Fetch all transactions for CAC and margin calculations
+      // @ts-ignore - transactions table exists but types may not be generated
+      const { data: transactions, error: transactionsError } = await supabase
+        .from('transactions')
+        .select('*');
+
       const typedClients = clients as Client[];
       const typedExpenses = expenses as Expense[];
       const typedAddons = addons as ClientAddon[];
+      const typedTransactions = (transactions || []) as unknown as Transaction[];
 
-      return calculateMetrics(typedClients, typedExpenses, typedAddons, startDate, endDate);
+      return calculateMetrics(typedClients, typedExpenses, typedAddons, typedTransactions, startDate, endDate);
     },
   });
 };
@@ -339,12 +376,18 @@ export const useDashboardComparison = (
 
       if (addonsError) throw addonsError;
 
+      // @ts-ignore - transactions table exists but types may not be generated
+      const { data: transactions } = await supabase
+        .from('transactions')
+        .select('*');
+
       const typedClients = clients as Client[];
       const typedExpenses = expenses as Expense[];
       const typedAddons = addons as ClientAddon[];
+      const typedTransactions = (transactions || []) as unknown as Transaction[];
 
-      const currentMetrics = calculateMetrics(typedClients, typedExpenses, typedAddons, startDate, endDate);
-      const comparisonMetrics = calculateMetrics(typedClients, typedExpenses, typedAddons, comparisonStartDate, comparisonEndDate);
+      const currentMetrics = calculateMetrics(typedClients, typedExpenses, typedAddons, typedTransactions, startDate, endDate);
+      const comparisonMetrics = calculateMetrics(typedClients, typedExpenses, typedAddons, typedTransactions, comparisonStartDate, comparisonEndDate);
 
       return {
         current: currentMetrics,

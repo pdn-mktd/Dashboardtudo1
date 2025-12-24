@@ -494,17 +494,17 @@ export default function Dashboard() {
                 tooltip="Eficiência de crescimento: (Novo MRR / MRR Perdido). Acima de 4x indica crescimento acelerado e sustentável."
               />
               <KPICard
-                title="Margem Bruta"
-                value={formatPercent(metrics?.grossMargin || 0)}
-                subtitle={metrics?.grossMargin && metrics.grossMargin >= 50 ? "Saudável" : "Ideal: ≥50%"}
+                title="Margem Líquida"
+                value={formatPercent(metrics?.netMargin || 0)}
+                subtitle={metrics?.netMargin && metrics.netMargin >= 20 ? "Saudável" : "Ideal: ≥20%"}
                 icon={Percent}
                 variant={
-                  metrics?.grossMargin && metrics.grossMargin >= 50
+                  metrics?.netMargin && metrics.netMargin >= 20
                     ? 'success'
-                    : (metrics?.grossMargin && metrics.grossMargin >= 30 ? 'warning' : 'default')
+                    : (metrics?.netMargin && metrics.netMargin >= 10 ? 'warning' : 'default')
                 }
                 delay={500}
-                tooltip="Lucro bruto dividido pela receita. Indica quanto sobra após os custos de aquisição (CAC)."
+                tooltip="Lucro líquido dividido pela receita. Indica quanto sobra após todas as despesas operacionais."
               />
             </>
           )}

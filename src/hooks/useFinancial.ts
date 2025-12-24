@@ -1,8 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { Transaction, CategoryRule, FinancialMetrics, TransactionCategory } from '@/types/database';
+import { Transaction, CategoryRule, FinancialMetrics, TransactionCategory, Client, ClientAddon } from '@/types/database';
 import { toast } from '@/hooks/use-toast';
-import { startOfMonth, endOfMonth, parseISO, isWithinInterval, differenceInMonths } from 'date-fns';
+import { startOfMonth, endOfMonth, parseISO, isWithinInterval, differenceInMonths, eachMonthOfInterval, format } from 'date-fns';
 
 // ============================================
 // Transaction Hooks
@@ -132,6 +132,66 @@ export const useBulkCreateTransactions = () => {
         onError: (error) => {
             console.error('Error importing transactions:', error);
             toast({ title: 'Erro ao importar transações', variant: 'destructive' });
+        },
+    });
+};
+
+export const useBulkUpdateTransactions = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async ({ ids, updates }: { ids: string[]; updates: Partial<Transaction> }) => {
+            // Update each transaction
+            const promises = ids.map(id =>
+                supabase
+                    .from('transactions')
+                    .update({ ...updates, updated_at: new Date().toISOString() })
+                    .eq('id', id)
+            );
+
+            const results = await Promise.all(promises);
+            const errors = results.filter(r => r.error);
+            if (errors.length > 0) {
+                throw new Error(`Failed to update ${errors.length} transactions`);
+            }
+
+            return ids.length;
+        },
+        onSuccess: (count) => {
+            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['financial-metrics'] });
+            queryClient.invalidateQueries({ queryKey: ['cash-flow-history'] });
+            toast({ title: `${count} transações atualizadas com sucesso!` });
+        },
+        onError: (error) => {
+            console.error('Error updating transactions:', error);
+            toast({ title: 'Erro ao atualizar transações', variant: 'destructive' });
+        },
+    });
+};
+
+export const useBulkDeleteTransactions = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (ids: string[]) => {
+            const { error } = await supabase
+                .from('transactions')
+                .delete()
+                .in('id', ids);
+
+            if (error) throw error;
+            return ids.length;
+        },
+        onSuccess: (count) => {
+            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['financial-metrics'] });
+            queryClient.invalidateQueries({ queryKey: ['cash-flow-history'] });
+            toast({ title: `${count} transações excluídas com sucesso!` });
+        },
+        onError: (error) => {
+            console.error('Error deleting transactions:', error);
+            toast({ title: 'Erro ao excluir transações', variant: 'destructive' });
         },
     });
 };
@@ -278,30 +338,110 @@ export const useCashFlowHistory = (startDate: Date, endDate: Date) => {
     return useQuery({
         queryKey: ['cash-flow-history', startDate.toISOString(), endDate.toISOString()],
         queryFn: async () => {
-            const { data: transactions, error } = await supabase
+            // Fetch manual transactions
+            const { data: transactions, error: transError } = await supabase
                 .from('transactions')
                 .select('*')
                 .gte('date', startDate.toISOString().split('T')[0])
                 .lte('date', endDate.toISOString().split('T')[0])
                 .order('date', { ascending: true });
 
-            if (error) throw error;
+            if (transError) throw transError;
 
-            // Group by month
+            // Fetch clients with products for subscription revenue
+            const { data: clients, error: clientsError } = await supabase
+                .from('clients')
+                .select('*, products(*)');
+
+            if (clientsError) throw clientsError;
+
+            // Fetch client addons
+            const { data: addons, error: addonsError } = await supabase
+                .from('client_addons')
+                .select('*, products(*)');
+
+            if (addonsError) throw addonsError;
+
+            const typedClients = clients as unknown as Client[];
+            const typedAddons = addons as unknown as ClientAddon[];
+            const typedTransactions = (transactions || []) as unknown as Transaction[];
+
+            // Generate all months in the range
+            const months = eachMonthOfInterval({ start: startDate, end: endDate });
             const monthlyData: Record<string, { month: string; revenue: number; expenses: number; net: number }> = {};
 
-            (transactions as Transaction[]).forEach(t => {
+            // Initialize all months
+            months.forEach(month => {
+                const monthKey = format(month, 'yyyy-MM');
+                monthlyData[monthKey] = { month: monthKey, revenue: 0, expenses: 0, net: 0 };
+            });
+
+            // Add subscription revenue (MRR) for each month
+            months.forEach(month => {
+                const monthKey = format(month, 'yyyy-MM');
+                const monthEnd = endOfMonth(month);
+                const monthStart = startOfMonth(month);
+
+                // Calculate MRR from active clients
+                typedClients.forEach(client => {
+                    if (!client.products) return;
+                    const clientStartDate = parseISO(client.start_date);
+
+                    // Check if client was active in this month
+                    const isActive = clientStartDate <= monthEnd &&
+                        (client.status === 'active' ||
+                            (client.status === 'churned' && client.churn_date && parseISO(client.churn_date) > monthStart));
+
+                    if (isActive) {
+                        // Add monthly revenue
+                        const monthlyPrice = client.products.billing_period === 'anual'
+                            ? Number(client.products.price) / 12
+                            : Number(client.products.price);
+                        monthlyData[monthKey].revenue += monthlyPrice;
+                    }
+                });
+
+                // Add addon revenue
+                typedAddons.forEach(addon => {
+                    if (!addon.products) return;
+                    const client = typedClients.find(c => c.id === addon.client_id);
+                    if (!client) return;
+
+                    const addonStartDate = parseISO(addon.start_date);
+                    const addonEndDate = addon.end_date ? parseISO(addon.end_date) : null;
+
+                    const isActive = addonStartDate <= monthEnd &&
+                        (addon.status === 'active' ||
+                            (addon.status === 'cancelled' && addonEndDate && addonEndDate > monthStart));
+
+                    if (isActive) {
+                        const monthlyPrice = addon.products.billing_period === 'anual'
+                            ? Number(addon.products.price) / 12
+                            : Number(addon.products.price);
+                        monthlyData[monthKey].revenue += monthlyPrice * addon.quantity;
+                    }
+                });
+            });
+
+            // Add manual transactions (revenue and expenses)
+            typedTransactions.forEach(t => {
                 const monthKey = t.date.substring(0, 7); // YYYY-MM
                 if (!monthlyData[monthKey]) {
                     monthlyData[monthKey] = { month: monthKey, revenue: 0, expenses: 0, net: 0 };
                 }
 
                 if (t.type === 'revenue') {
+                    // Add manual revenue entries
                     monthlyData[monthKey].revenue += Math.abs(t.amount);
                 } else if (t.type === 'expense') {
+                    // Add expenses
                     monthlyData[monthKey].expenses += Math.abs(t.amount);
                 }
-                monthlyData[monthKey].net = monthlyData[monthKey].revenue - monthlyData[monthKey].expenses;
+            });
+
+            // Calculate net for each month
+            Object.values(monthlyData).forEach(data => {
+                data.net = data.revenue - data.expenses;
             });
 
             return Object.values(monthlyData).sort((a, b) => a.month.localeCompare(b.month));
@@ -374,26 +514,155 @@ export const detectCSVColumns = (headers: string[]): {
     dateColumn: number;
     descriptionColumn: number;
     amountColumn: number;
+    categoryColumn: number;
 } => {
-    const lowerHeaders = headers.map(h => h.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
+    const lowerHeaders = headers.map(h => h.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim());
+
+    console.log('CSV Headers (normalized):', lowerHeaders);
 
     // Find date column
-    const datePatterns = ['data', 'date', 'dt', 'dia'];
+    const datePatterns = ['data', 'date', 'dt', 'dia', 'quando'];
     const dateColumn = lowerHeaders.findIndex(h => datePatterns.some(p => h.includes(p)));
 
     // Find description column
-    const descPatterns = ['descricao', 'description', 'desc', 'historico', 'lancamento', 'detalhe'];
+    const descPatterns = ['item', 'descricao', 'description', 'desc', 'historico', 'lancamento', 'detalhe'];
     const descriptionColumn = lowerHeaders.findIndex(h => descPatterns.some(p => h.includes(p)));
 
     // Find amount column
-    const amountPatterns = ['valor', 'amount', 'value', 'quantia', 'total'];
+    const amountPatterns = ['quanto', 'valor', 'amount', 'value', 'quantia', 'total'];
     const amountColumn = lowerHeaders.findIndex(h => amountPatterns.some(p => h.includes(p)));
+
+    // Find category column - be specific to avoid matching wrong columns
+    const categoryColumn = lowerHeaders.findIndex(h => h === 'categoria' || h === 'category');
+
+    console.log('Detected columns:', { dateColumn, descriptionColumn, amountColumn, categoryColumn });
 
     return {
         dateColumn: dateColumn >= 0 ? dateColumn : 0,
         descriptionColumn: descriptionColumn >= 0 ? descriptionColumn : 1,
         amountColumn: amountColumn >= 0 ? amountColumn : 2,
+        categoryColumn: categoryColumn,
     };
+};
+
+// Map CSV category names (Portuguese or custom) to TransactionCategory
+export const mapCSVCategory = (csvCategory: string): { category: TransactionCategory; is_cac: boolean } => {
+    const normalized = csvCategory.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+    // Map common Portuguese category names to system categories
+    const categoryMappings: Record<string, { category: TransactionCategory; is_cac: boolean }> = {
+        // Marketing related (CAC)
+        'marketing': { category: 'marketing', is_cac: true },
+        'ads': { category: 'marketing', is_cac: true },
+        'anuncios': { category: 'marketing', is_cac: true },
+        'publicidade': { category: 'marketing', is_cac: true },
+        'meta ads': { category: 'marketing', is_cac: true },
+        'google ads': { category: 'marketing', is_cac: true },
+        'trafego pago': { category: 'marketing', is_cac: true },
+        'trafego': { category: 'marketing', is_cac: true },
+
+        // Sales (CAC)
+        'vendas': { category: 'sales', is_cac: true },
+        'comercial': { category: 'sales', is_cac: true },
+        'comissao': { category: 'sales', is_cac: true },
+        'comissoes': { category: 'sales', is_cac: true },
+
+        // Infrastructure
+        'infraestrutura': { category: 'infrastructure', is_cac: false },
+        'infra': { category: 'infrastructure', is_cac: false },
+        'servidor': { category: 'infrastructure', is_cac: false },
+        'servidores': { category: 'infrastructure', is_cac: false },
+        'hospedagem': { category: 'infrastructure', is_cac: false },
+        'cloud': { category: 'infrastructure', is_cac: false },
+        'aws': { category: 'infrastructure', is_cac: false },
+
+        // Tools (including common SaaS names)
+        'ferramentas': { category: 'tools', is_cac: false },
+        'ferramenta': { category: 'tools', is_cac: false },
+        'software': { category: 'tools', is_cac: false },
+        'softwares': { category: 'tools', is_cac: false },
+        'saas': { category: 'tools', is_cac: false },
+        'assinatura': { category: 'tools', is_cac: false },
+        'assinaturas': { category: 'tools', is_cac: false },
+        'mensalidade': { category: 'tools', is_cac: false },
+        'highlevel': { category: 'tools', is_cac: false },
+        'gohighlevel': { category: 'tools', is_cac: false },
+        'whatsapp': { category: 'tools', is_cac: false },
+        'automacao': { category: 'tools', is_cac: false },
+        'autoreply': { category: 'tools', is_cac: false },
+        'auto-recharge': { category: 'tools', is_cac: false },
+        'stevo': { category: 'tools', is_cac: false },
+        'sthub': { category: 'tools', is_cac: false },
+        'integracao': { category: 'tools', is_cac: false },
+        'kong': { category: 'tools', is_cac: false },
+        'suprimentos': { category: 'tools', is_cac: false },
+        'dominio': { category: 'tools', is_cac: false },
+        'umode': { category: 'tools', is_cac: false },
+        'gorilla': { category: 'tools', is_cac: false },
+        'leadsgorilla': { category: 'tools', is_cac: false },
+        'leadsorilla': { category: 'tools', is_cac: false },
+        'paddle': { category: 'tools', is_cac: false },
+        'paddlenet': { category: 'tools', is_cac: false },
+        'turismo': { category: 'tools', is_cac: false },
+
+        // Payroll
+        'folha': { category: 'payroll', is_cac: false },
+        'folha de pagamento': { category: 'payroll', is_cac: false },
+        'salario': { category: 'payroll', is_cac: false },
+        'salarios': { category: 'payroll', is_cac: false },
+        'funcionarios': { category: 'payroll', is_cac: false },
+        'pessoal': { category: 'payroll', is_cac: false },
+        'rh': { category: 'payroll', is_cac: false },
+
+        // Taxes
+        'impostos': { category: 'taxes', is_cac: false },
+        'imposto': { category: 'taxes', is_cac: false },
+        'taxas': { category: 'taxes', is_cac: false },
+        'taxa': { category: 'taxes', is_cac: false },
+        'tributos': { category: 'taxes', is_cac: false },
+
+        // Administrative
+        'administrativo': { category: 'administrative', is_cac: false },
+        'admin': { category: 'administrative', is_cac: false },
+        'escritorio': { category: 'administrative', is_cac: false },
+        'aluguel': { category: 'administrative', is_cac: false },
+        'contador': { category: 'administrative', is_cac: false },
+        'contabilidade': { category: 'administrative', is_cac: false },
+
+        // Revenue categories - Accounts that receive money
+        'receita': { category: 'other_revenue', is_cac: false },
+        'receitas': { category: 'other_revenue', is_cac: false },
+        'faturamento': { category: 'subscription', is_cac: false },
+        'servico': { category: 'service', is_cac: false },
+        'servicos': { category: 'service', is_cac: false },
+        'consultoria': { category: 'consulting', is_cac: false },
+        'conta tudo1': { category: 'administrative', is_cac: false },
+        'tudo1': { category: 'administrative', is_cac: false },
+        'pedro': { category: 'administrative', is_cac: false },
+        'nu ale': { category: 'administrative', is_cac: false },
+        'realizado': { category: 'other', is_cac: false },
+
+        // Other
+        'outros': { category: 'other', is_cac: false },
+        'outro': { category: 'other', is_cac: false },
+        'other': { category: 'other', is_cac: false },
+        'diversos': { category: 'other', is_cac: false },
+    };
+
+    // Try exact match first
+    if (categoryMappings[normalized]) {
+        return categoryMappings[normalized];
+    }
+
+    // Try partial match
+    for (const [key, value] of Object.entries(categoryMappings)) {
+        if (normalized.includes(key) || key.includes(normalized)) {
+            return value;
+        }
+    }
+
+    // Default to 'other'
+    return { category: 'other', is_cac: false };
 };
 
 export const parseAmount = (value: string): number => {
