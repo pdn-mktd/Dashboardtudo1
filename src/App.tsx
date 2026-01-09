@@ -14,6 +14,7 @@ import NotFound from "./pages/NotFound";
 import Transactions from "./pages/Transactions";
 import Financial from "./pages/Financial";
 import Planning from "./pages/Planning";
+import UpdatePassword from "./pages/UpdatePassword";
 
 const queryClient = new QueryClient();
 
@@ -33,6 +34,7 @@ const App = () => (
           <Route path="/financeiro" element={<ProtectedRoute><Financial /></ProtectedRoute>} />
           <Route path="/planejamento" element={<ProtectedRoute><Planning /></ProtectedRoute>} />
           <Route path="/usuarios" element={<ProtectedRoute><Users /></ProtectedRoute>} />
+          <Route path="/update-password" element={<ProtectedRoute><UpdatePassword /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

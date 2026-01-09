@@ -9,23 +9,29 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { toast } from '@/hooks/use-toast';
-import { Loader2, LogIn, UserPlus } from 'lucide-react';
+import { Loader2, LogIn, UserPlus, Mail } from 'lucide-react';
 
 const authSchema = z.object({
   email: z.string().trim().email({ message: 'Email inválido' }).max(255, { message: 'Email muito longo' }),
   password: z.string().min(6, { message: 'Senha deve ter no mínimo 6 caracteres' }).max(72, { message: 'Senha muito longa' }),
 });
 
+const resetSchema = z.object({
+  email: z.string().trim().email({ message: 'Email inválido' }).max(255, { message: 'Email muito longo' }),
+  password: z.string().optional(),
+});
+
 type AuthFormData = z.infer<typeof authSchema>;
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
+  const [isReset, setIsReset] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const { signIn, signUp, isAuthenticated } = useAuth();
+  const { signIn, signUp, resetPassword, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
   const form = useForm<AuthFormData>({
-    resolver: zodResolver(authSchema),
+    resolver: zodResolver(isReset ? resetSchema : authSchema),
     defaultValues: {
       email: '',
       password: '',
@@ -40,10 +46,19 @@ export default function Auth() {
 
   const onSubmit = async (data: AuthFormData) => {
     setIsLoading(true);
-    
+
     try {
-      if (isLogin) {
-        const { error } = await signIn(data.email, data.password);
+      if (isReset) {
+        const { error } = await resetPassword(data.email);
+        if (error) {
+          toast({ title: error.message, variant: 'destructive' });
+          return;
+        }
+        toast({ title: 'Email de recuperação enviado!', description: 'Verifique sua caixa de entrada.' });
+        setIsReset(false);
+        setIsLogin(true);
+      } else if (isLogin) {
+        const { error } = await signIn(data.email, data.password!);
         if (error) {
           if (error.message.includes('Invalid login credentials')) {
             toast({ title: 'Email ou senha incorretos', variant: 'destructive' });
@@ -55,7 +70,7 @@ export default function Auth() {
         toast({ title: 'Login realizado com sucesso!' });
         navigate('/');
       } else {
-        const { error } = await signUp(data.email, data.password);
+        const { error } = await signUp(data.email, data.password!);
         if (error) {
           if (error.message.includes('User already registered')) {
             toast({ title: 'Este email já está cadastrado', variant: 'destructive' });
@@ -83,12 +98,18 @@ export default function Auth() {
             <span className="text-2xl font-bold text-foreground">tudo1</span>
           </div>
           <CardTitle className="text-2xl">
-            {isLogin ? 'Entrar na sua conta' : 'Criar uma conta'}
+            {isReset
+              ? 'Recuperar Senha'
+              : isLogin
+                ? 'Entrar na sua conta'
+                : 'Criar uma conta'}
           </CardTitle>
           <CardDescription>
-            {isLogin 
-              ? 'Digite seu email e senha para acessar o dashboard' 
-              : 'Preencha os dados para criar sua conta'}
+            {isReset
+              ? 'Digite seu email para receber o link de recuperação'
+              : isLogin
+                ? 'Digite seu email e senha para acessar o dashboard'
+                : 'Preencha os dados para criar sua conta'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -101,11 +122,11 @@ export default function Auth() {
                   <FormItem>
                     <FormLabel>Email</FormLabel>
                     <FormControl>
-                      <Input 
-                        type="email" 
-                        placeholder="seu@email.com" 
+                      <Input
+                        type="email"
+                        placeholder="seu@email.com"
                         autoComplete="email"
-                        {...field} 
+                        {...field}
                       />
                     </FormControl>
                     <FormMessage />
@@ -113,47 +134,78 @@ export default function Auth() {
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Senha</FormLabel>
-                    <FormControl>
-                      <Input 
-                        type="password" 
-                        placeholder="••••••••" 
-                        autoComplete={isLogin ? 'current-password' : 'new-password'}
-                        {...field} 
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {!isReset && (
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Senha</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="password"
+                          placeholder="••••••••"
+                          autoComplete={isLogin ? 'current-password' : 'new-password'}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading ? (
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : isReset ? (
+                  <Mail className="h-4 w-4 mr-2" />
                 ) : isLogin ? (
                   <LogIn className="h-4 w-4 mr-2" />
                 ) : (
                   <UserPlus className="h-4 w-4 mr-2" />
                 )}
-                {isLogin ? 'Entrar' : 'Criar conta'}
+                {isReset
+                  ? 'Enviar Link'
+                  : isLogin
+                    ? 'Entrar'
+                    : 'Criar conta'}
               </Button>
             </form>
           </Form>
 
-          <div className="mt-6 text-center">
+          <div className="mt-6 text-center space-y-2">
+            {!isReset && isLogin && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsReset(true);
+                  form.reset();
+                }}
+                className="text-sm text-primary hover:underline block w-full"
+              >
+                Esqueceu a senha?
+              </button>
+            )}
+
             <button
               type="button"
-              onClick={() => setIsLogin(!isLogin)}
+              onClick={() => {
+                if (isReset) {
+                  setIsReset(false);
+                  setIsLogin(true);
+                } else {
+                  setIsLogin(!isLogin);
+                }
+                form.reset();
+              }}
               className="text-sm text-muted-foreground hover:text-primary transition-colors"
             >
-              {isLogin 
-                ? 'Não tem uma conta? Criar agora' 
-                : 'Já tem uma conta? Fazer login'}
+              {isReset
+                ? 'Voltar para o login'
+                : isLogin
+                  ? 'Não tem uma conta? Criar agora'
+                  : 'Já tem uma conta? Fazer login'}
             </button>
           </div>
         </CardContent>
