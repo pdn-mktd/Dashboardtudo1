@@ -32,6 +32,11 @@ export interface Client {
   notes: string | null;
   product_id: string | null;
   plan_change_date: string | null;  // Data do último upsell/downgrade
+  // Campos de integração Asaas
+  asaas_customer_id: string | null;
+  payment_status: 'ok' | 'pending' | 'overdue' | null;
+  last_payment_date: string | null;
+  days_overdue: number | null;
   created_at: string;
   updated_at: string;
   products?: Product;

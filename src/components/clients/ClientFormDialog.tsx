@@ -42,6 +42,7 @@ const formSchema = z.object({
   churn_date: z.string().optional(),
   churn_reason: z.string().optional(),
   notes: z.string().optional(),
+  asaas_customer_id: z.string().optional(),
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -74,6 +75,7 @@ export function ClientFormDialog({ open, onOpenChange, client }: ClientFormDialo
       churn_date: '',
       churn_reason: '',
       notes: '',
+      asaas_customer_id: '',
     },
   });
 
@@ -102,6 +104,7 @@ export function ClientFormDialog({ open, onOpenChange, client }: ClientFormDialo
         churn_date: client.churn_date || '',
         churn_reason: client.churn_reason || '',
         notes: client.notes || '',
+        asaas_customer_id: client.asaas_customer_id || '',
       });
     } else {
       setOriginalProductId(null);
@@ -115,6 +118,7 @@ export function ClientFormDialog({ open, onOpenChange, client }: ClientFormDialo
         churn_date: '',
         churn_reason: '',
         notes: '',
+        asaas_customer_id: '',
       });
     }
   }, [client, form]);
@@ -150,6 +154,7 @@ export function ClientFormDialog({ open, onOpenChange, client }: ClientFormDialo
       status: data.status as 'active' | 'churned',
       start_date: data.start_date,
       churn_date: data.status === 'churned' && data.churn_date ? data.churn_date : null,
+      asaas_customer_id: data.asaas_customer_id || null,
     };
 
     // Se houve mudança de plano, salva a data da alteração
@@ -339,6 +344,35 @@ export function ClientFormDialog({ open, onOpenChange, client }: ClientFormDialo
                   )}
                 />
               </>
+            )}
+
+            {/* Integração Asaas */}
+            {isEditing && (
+              <div className="p-3 rounded-lg border border-blue-500/30 bg-blue-500/5">
+                <FormField
+                  control={form.control}
+                  name="asaas_customer_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-2">
+                        <span className="text-blue-500">💳</span>
+                        ID do Cliente no Asaas
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="cus_000012345678"
+                          {...field}
+                          className="font-mono"
+                        />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">
+                        Encontre o ID no cadastro do cliente no Asaas. Formato: cus_XXXXXXXXXXXX
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
             )}
 
             <FormField
