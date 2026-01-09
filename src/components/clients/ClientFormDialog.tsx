@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/select';
 import { useCreateClient, useUpdateClient } from '@/hooks/useClients';
 import { useProducts } from '@/hooks/useProducts';
+import { ArrowUpCircle } from 'lucide-react';
 
 const formSchema = z.object({
   name: z.string().min(1, 'Nome é obrigatório'),
@@ -37,6 +38,7 @@ const formSchema = z.object({
   product_id: z.string().min(1, 'Produto é obrigatório'),
   status: z.enum(['active', 'churned']),
   start_date: z.string().min(1, 'Data de entrada é obrigatória'),
+  plan_change_date: z.string().optional(),
   churn_date: z.string().optional(),
   churn_reason: z.string().optional(),
   notes: z.string().optional(),
@@ -56,6 +58,10 @@ export function ClientFormDialog({ open, onOpenChange, client }: ClientFormDialo
   const { data: products } = useProducts();
   const isEditing = !!client;
 
+  // Rastreia o produto original para detectar mudança de plano (upsell/downgrade)
+  const [originalProductId, setOriginalProductId] = useState<string | null>(null);
+  const [showPlanChangeDate, setShowPlanChangeDate] = useState(false);
+
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -64,6 +70,7 @@ export function ClientFormDialog({ open, onOpenChange, client }: ClientFormDialo
       product_id: '',
       status: 'active',
       start_date: format(new Date(), 'yyyy-MM-dd'),
+      plan_change_date: format(new Date(), 'yyyy-MM-dd'),
       churn_date: '',
       churn_reason: '',
       notes: '',
@@ -71,26 +78,40 @@ export function ClientFormDialog({ open, onOpenChange, client }: ClientFormDialo
   });
 
   const status = form.watch('status');
+  const currentProductId = form.watch('product_id');
+
+  // Detecta mudança de plano
+  useEffect(() => {
+    if (isEditing && originalProductId && currentProductId !== originalProductId) {
+      setShowPlanChangeDate(true);
+    } else {
+      setShowPlanChangeDate(false);
+    }
+  }, [currentProductId, originalProductId, isEditing]);
 
   useEffect(() => {
     if (client) {
+      setOriginalProductId(client.product_id);
       form.reset({
         name: client.name,
         email: client.email,
         product_id: client.product_id || '',
         status: client.status,
         start_date: client.start_date,
+        plan_change_date: format(new Date(), 'yyyy-MM-dd'),
         churn_date: client.churn_date || '',
         churn_reason: client.churn_reason || '',
         notes: client.notes || '',
       });
     } else {
+      setOriginalProductId(null);
       form.reset({
         name: '',
         email: '',
         product_id: '',
         status: 'active',
         start_date: format(new Date(), 'yyyy-MM-dd'),
+        plan_change_date: format(new Date(), 'yyyy-MM-dd'),
         churn_date: '',
         churn_reason: '',
         notes: '',
@@ -98,11 +119,30 @@ export function ClientFormDialog({ open, onOpenChange, client }: ClientFormDialo
     }
   }, [client, form]);
 
+  // Calcula a diferença de valor entre planos para exibir
+  const getUpgradeInfo = () => {
+    if (!originalProductId || !currentProductId || originalProductId === currentProductId) return null;
+
+    const oldProduct = products?.find(p => p.id === originalProductId);
+    const newProduct = products?.find(p => p.id === currentProductId);
+
+    if (!oldProduct || !newProduct) return null;
+
+    const oldPrice = Number(oldProduct.price);
+    const newPrice = Number(newProduct.price);
+    const diff = newPrice - oldPrice;
+
+    return {
+      isUpgrade: diff > 0,
+      diff: Math.abs(diff),
+      oldName: oldProduct.name,
+      newName: newProduct.name,
+    };
+  };
+
+  const upgradeInfo = getUpgradeInfo();
+
   const onSubmit = async (data: FormData) => {
-    // Note: churn_reason and notes fields need to be added to Supabase database first
-    // Run this SQL in Supabase:
-    // ALTER TABLE clients ADD COLUMN churn_reason TEXT NULL;
-    // ALTER TABLE clients ADD COLUMN notes TEXT NULL;
     const clientData: Record<string, unknown> = {
       name: data.name,
       email: data.email,
@@ -112,10 +152,10 @@ export function ClientFormDialog({ open, onOpenChange, client }: ClientFormDialo
       churn_date: data.status === 'churned' && data.churn_date ? data.churn_date : null,
     };
 
-    // Only include these fields if they have values (they may not exist in DB yet)
-    // Uncomment after adding columns to Supabase:
-    // if (data.churn_reason) clientData.churn_reason = data.churn_reason;
-    // if (data.notes) clientData.notes = data.notes;
+    // Se houve mudança de plano, salva a data da alteração
+    if (showPlanChangeDate && data.plan_change_date) {
+      clientData.plan_change_date = data.plan_change_date;
+    }
 
     if (isEditing && client) {
       await updateClient.mutateAsync({ id: client.id, ...clientData } as Parameters<typeof updateClient.mutateAsync>[0]);
@@ -125,6 +165,8 @@ export function ClientFormDialog({ open, onOpenChange, client }: ClientFormDialo
 
     onOpenChange(false);
     form.reset();
+    setShowPlanChangeDate(false);
+    setOriginalProductId(null);
   };
 
   return (
@@ -187,6 +229,34 @@ export function ClientFormDialog({ open, onOpenChange, client }: ClientFormDialo
                 </FormItem>
               )}
             />
+
+            {/* Seção de Upsell/Downgrade */}
+            {showPlanChangeDate && upgradeInfo && (
+              <div className={`p-3 rounded-lg border ${upgradeInfo.isUpgrade ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-amber-500/10 border-amber-500/30'}`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <ArrowUpCircle className={`h-5 w-5 ${upgradeInfo.isUpgrade ? 'text-emerald-500' : 'text-amber-500 rotate-180'}`} />
+                  <span className={`font-medium ${upgradeInfo.isUpgrade ? 'text-emerald-500' : 'text-amber-500'}`}>
+                    {upgradeInfo.isUpgrade ? 'Upsell Detectado!' : 'Downgrade Detectado'}
+                  </span>
+                </div>
+                <p className="text-sm text-muted-foreground mb-3">
+                  {upgradeInfo.oldName} → {upgradeInfo.newName} ({upgradeInfo.isUpgrade ? '+' : '-'}R$ {upgradeInfo.diff.toFixed(2)}/mês)
+                </p>
+                <FormField
+                  control={form.control}
+                  name="plan_change_date"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Data da Alteração de Plano</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <FormField
@@ -307,3 +377,4 @@ export function ClientFormDialog({ open, onOpenChange, client }: ClientFormDialo
     </Dialog>
   );
 }
+

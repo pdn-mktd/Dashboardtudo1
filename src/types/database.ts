@@ -31,6 +31,7 @@ export interface Client {
   churn_reason: string | null;
   notes: string | null;
   product_id: string | null;
+  plan_change_date: string | null;  // Data do último upsell/downgrade
   created_at: string;
   updated_at: string;
   products?: Product;
