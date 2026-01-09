@@ -101,7 +101,8 @@ const REVENUE_CATEGORIES: TransactionCategory[] = [
 ];
 
 export default function Transactions() {
-    const [startDate] = useState(startOfYear(new Date()));
+    // Busca transações dos últimos 3 anos para permitir visualização histórica
+    const [startDate] = useState(new Date(new Date().getFullYear() - 2, 0, 1)); // 01/01 de 2 anos atrás
     const [endDate] = useState(endOfYear(new Date()));
     const { data: transactions, isLoading } = useTransactions(startDate, endDate);
     const { data: categoryRules } = useCategoryRules();
