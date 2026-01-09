@@ -360,13 +360,13 @@ export function ClientFormDialog({ open, onOpenChange, client }: ClientFormDialo
                       </FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="cus_000012345678"
+                          placeholder="154569767"
                           {...field}
                           className="font-mono"
                         />
                       </FormControl>
                       <p className="text-xs text-muted-foreground">
-                        Encontre o ID no cadastro do cliente no Asaas. Formato: cus_XXXXXXXXXXXX
+                        Copie o número da URL do cliente no Asaas (ex: /customerAccount/show/154569767)
                       </p>
                       <FormMessage />
                     </FormItem>

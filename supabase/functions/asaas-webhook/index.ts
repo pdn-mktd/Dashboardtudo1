@@ -108,14 +108,25 @@ serve(async (req) => {
 async function processPaymentEvent(supabase: any, event: AsaasEvent, payment: AsaasPayment) {
     console.log(`Processing payment event: ${event} for payment ${payment.id}`)
 
-    // Buscar cliente pelo asaas_customer_id
-    const { data: client } = await supabase
+    // Buscar cliente pelo asaas_customer_id (tenta múltiplos formatos)
+    const customerId = payment.customer
+    const customerIdWithoutPrefix = customerId.replace('cus_', '').replace(/^0+/, '') // Remove cus_ e zeros à esquerda
+    const customerIdNumeric = customerId.replace('cus_', '') // Só remove cus_
+
+    // Busca com múltiplos formatos possíveis
+    const { data: clients } = await supabase
         .from('clients')
         .select('id, name, email')
-        .eq('asaas_customer_id', payment.customer)
-        .single()
+        .or(`asaas_customer_id.eq.${customerId},asaas_customer_id.eq.${customerIdWithoutPrefix},asaas_customer_id.eq.${customerIdNumeric}`)
 
+    const client = clients?.[0] || null
     const clientId = client?.id || null
+
+    if (client) {
+        console.log(`Client found: ${client.name} (${client.id})`)
+    } else {
+        console.log(`No client found for Asaas customer: ${customerId}`)
+    }
 
     // Upsert na tabela asaas_payments
     const paymentData = {
