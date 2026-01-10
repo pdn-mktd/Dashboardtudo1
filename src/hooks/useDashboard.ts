@@ -89,8 +89,26 @@ const calculateMetrics = (
   const activeClients = clients.filter(c => wasClientActiveAt(c, endDate));
   const activeClientsWithRecurring = activeClients.filter(c => c.products && isRecurringProduct(c.products));
 
-  // Calculate MRR at end of period (with add-ons, only recurring)
-  const mrr = calculateMrrAtDate(clients, addons, endDate);
+  // Calculate MRR: 
+  // 1. Clients WITHOUT Asaas: calculated from their product prices
+  // 2. Clients WITH Asaas: sum of their revenue transactions in the current month
+  const mrrFromNonAsaasClients = calculateMrrAtDate(clients, addons, endDate);
+
+  // Get Asaas revenue from transactions (subscription type) in the current month
+  const currentMonthStart = startOfMonth(endDate);
+  const currentMonthEnd = endOfMonth(endDate);
+
+  const asaasRevenueTransactions = transactions.filter(t => {
+    const transactionDate = parseISO(t.date);
+    return t.type === 'revenue' &&
+      t.category === 'subscription' &&
+      isWithinInterval(transactionDate, { start: currentMonthStart, end: currentMonthEnd });
+  });
+
+  const mrrFromAsaas = asaasRevenueTransactions.reduce((acc, t) => acc + t.amount, 0);
+
+  // Total MRR = non-Asaas clients + Asaas transactions
+  const mrr = mrrFromNonAsaasClients + mrrFromAsaas;
 
   // ARR = MRR * 12
   const arr = mrr * 12;
