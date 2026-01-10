@@ -285,7 +285,10 @@ export const useFinancialMetrics = (startDate: Date, endDate: Date, subscription
             const revenueTransactions = txns.filter(t => t.type === 'revenue');
             const expenseTransactions = txns.filter(t => t.type === 'expense');
 
-            const otherRevenue = revenueTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+            // Other revenue = revenue transactions EXCLUDING subscription (already in subscriptionRevenue)
+            const otherRevenue = revenueTransactions
+                .filter(t => t.category !== 'subscription')
+                .reduce((sum, t) => sum + Math.abs(t.amount), 0);
             const totalRevenue = subscriptionRevenue + otherRevenue;
 
             const totalExpenses = expenseTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
