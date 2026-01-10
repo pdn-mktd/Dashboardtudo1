@@ -91,6 +91,8 @@ export type TransactionCategory =
   | 'payroll'
   | 'taxes'
   | 'administrative'
+  | 'financial_fees'
+  | 'uncategorized'
   | 'other'
   | 'subscription'
   | 'service'
@@ -158,6 +160,8 @@ export const CATEGORY_LABELS: Record<TransactionCategory, string> = {
   payroll: 'Folha de Pagamento',
   taxes: 'Impostos',
   administrative: 'Administrativo',
+  financial_fees: 'Taxas Financeiras',
+  uncategorized: 'Não Categorizado',
   other: 'Outros',
   subscription: 'Assinaturas',
   service: 'Serviços',

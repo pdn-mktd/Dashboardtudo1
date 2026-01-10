@@ -190,7 +190,7 @@ function mapTransactionType(asaasType: string): { category: string, type: 'reven
         'REFUND_REVERSAL',
     ]
 
-    // Tipos de saída (despesa) - taxas
+    // Tipos de saída (despesa) - taxas financeiras
     const feeTypes = [
         'PAYMENT_FEE',
         'PAYMENT_INSTALLMENT_FEE',
@@ -203,7 +203,7 @@ function mapTransactionType(asaasType: string): { category: string, type: 'reven
         'CHARGEBACK_FEE',
     ]
 
-    // Transferências/Saques
+    // Transferências/Saques - deixar como não categorizado para categorização manual
     const transferTypes = [
         'TRANSFER',
         'INTERNAL_TRANSFER',
@@ -221,21 +221,22 @@ function mapTransactionType(asaasType: string): { category: string, type: 'reven
     }
 
     if (feeTypes.includes(asaasType)) {
-        return { category: 'administrative', type: 'expense', isCac: false }
+        // Taxas do Asaas vão para "Taxas Financeiras"
+        return { category: 'financial_fees', type: 'expense', isCac: false }
     }
 
     if (transferTypes.includes(asaasType)) {
-        // Transferências não são receita nem despesa operacional - são movimentações de caixa
-        // Vamos categorizar como "other" para não poluir o DRE
-        return { category: 'other', type: 'expense', isCac: false }
+        // Transferências ficam como "Não Categorizado" para categorização manual
+        return { category: 'uncategorized', type: 'expense', isCac: false }
     }
 
     if (refundTypes.includes(asaasType)) {
-        return { category: 'other', type: 'expense', isCac: false }
+        // Estornos também ficam para categorização manual
+        return { category: 'uncategorized', type: 'expense', isCac: false }
     }
 
-    // Default: outros tipos
-    return { category: 'other', type: 'expense', isCac: false }
+    // Default: não categorizado para revisão manual
+    return { category: 'uncategorized', type: 'expense', isCac: false }
 }
 
 function mapTypeToDescription(asaasType: string): string {
