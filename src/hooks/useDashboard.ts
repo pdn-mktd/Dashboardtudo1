@@ -10,18 +10,18 @@ interface UseDashboardParams {
 }
 
 // Helper to calculate monthly price from a product (only for recurring products)
-const getMonthlyPrice = (price: number, billingPeriod: string): number => {
+export const getMonthlyPrice = (price: number, billingPeriod: string): number => {
   return billingPeriod === 'anual' ? price / 12 : price;
 };
 
 // Check if product is recurring (for MRR calculations)
-const isRecurringProduct = (product: { payment_type?: string } | undefined): boolean => {
+export const isRecurringProduct = (product: { payment_type?: string } | undefined): boolean => {
   // Default to 'recorrente' for backwards compatibility
   return !product || product.payment_type !== 'unico';
 };
 
 // Check if client was active at a specific date
-const wasClientActiveAt = (client: Client, date: Date): boolean => {
+export const wasClientActiveAt = (client: Client, date: Date): boolean => {
   const clientStartDate = parseISO(client.start_date);
   if (clientStartDate > date) return false;
 
@@ -34,7 +34,7 @@ const wasClientActiveAt = (client: Client, date: Date): boolean => {
 };
 
 // Check if addon was active at a specific date
-const wasAddonActiveAt = (addon: ClientAddon, date: Date): boolean => {
+export const wasAddonActiveAt = (addon: ClientAddon, date: Date): boolean => {
   const addonStartDate = parseISO(addon.start_date);
   if (addonStartDate > date) return false;
 
@@ -48,7 +48,7 @@ const wasAddonActiveAt = (addon: ClientAddon, date: Date): boolean => {
 
 // Calculate MRR for a specific date, including add-ons (only recurring products)
 // MRR = Potential Monthly Recurring Revenue from ALL active clients
-const calculateMrrAtDate = (clients: Client[], addons: ClientAddon[], date: Date): number => {
+export const calculateMrrAtDate = (clients: Client[], addons: ClientAddon[], date: Date): number => {
   let mrr = 0;
 
   // Main product MRR (all active recurring clients)

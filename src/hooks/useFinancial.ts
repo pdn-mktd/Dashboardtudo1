@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Transaction, CategoryRule, FinancialMetrics, TransactionCategory, Client, ClientAddon } from '@/types/database';
 import { toast } from '@/hooks/use-toast';
 import { startOfMonth, endOfMonth, parseISO, isWithinInterval, differenceInMonths, eachMonthOfInterval, format } from 'date-fns';
+import { calculateMrrAtDate } from './useDashboard';
 
 // ============================================
 // Transaction Hooks
@@ -390,60 +391,14 @@ export const useCashFlowHistory = (startDate: Date, endDate: Date) => {
             });
 
             // Add subscription revenue (MRR) for each month
-            // Only count RECURRING products (mensal/anual), not one-time payments
+            // Using the same calculateMrrAtDate function as useDashboard for consistency
             months.forEach(month => {
                 const monthKey = format(month, 'yyyy-MM');
                 const monthEnd = endOfMonth(month);
-                const monthStart = startOfMonth(month);
 
-                // Calculate MRR from active clients with RECURRING products
-                typedClients.forEach(client => {
-                    if (!client.products) return;
-
-                    // Only count recurring products
-                    const billingPeriod = client.products.billing_period;
-                    if (billingPeriod !== 'mensal' && billingPeriod !== 'anual') return;
-
-                    const clientStartDate = parseISO(client.start_date);
-
-                    // Check if client was active in this month
-                    const isActive = clientStartDate <= monthEnd &&
-                        (client.status === 'active' ||
-                            (client.status === 'churned' && client.churn_date && parseISO(client.churn_date) > monthStart));
-
-                    if (isActive) {
-                        // Add monthly revenue
-                        const monthlyPrice = billingPeriod === 'anual'
-                            ? Number(client.products.price) / 12
-                            : Number(client.products.price);
-                        monthlyData[monthKey].revenue += monthlyPrice;
-                    }
-                });
-
-                // Add addon revenue (only recurring)
-                typedAddons.forEach(addon => {
-                    if (!addon.products) return;
-                    const client = typedClients.find(c => c.id === addon.client_id);
-                    if (!client) return;
-
-                    // Only count recurring addons
-                    const billingPeriod = addon.products.billing_period;
-                    if (billingPeriod !== 'mensal' && billingPeriod !== 'anual') return;
-
-                    const addonStartDate = parseISO(addon.start_date);
-                    const addonEndDate = addon.end_date ? parseISO(addon.end_date) : null;
-
-                    const isActive = addonStartDate <= monthEnd &&
-                        (addon.status === 'active' ||
-                            (addon.status === 'cancelled' && addonEndDate && addonEndDate > monthStart));
-
-                    if (isActive) {
-                        const monthlyPrice = billingPeriod === 'anual'
-                            ? Number(addon.products.price) / 12
-                            : Number(addon.products.price);
-                        monthlyData[monthKey].revenue += monthlyPrice * addon.quantity;
-                    }
-                });
+                // Use the exact same MRR calculation as DRE/Dashboard
+                const monthlyMrr = calculateMrrAtDate(typedClients, typedAddons, monthEnd);
+                monthlyData[monthKey].revenue += monthlyMrr;
             });
 
             // Add manual transactions (revenue and expenses)
