@@ -52,18 +52,27 @@ export default function Financial() {
     const [endDate, setEndDate] = useState(endOfYear(new Date()));
 
     const { data: dashboardMetrics, isLoading: dashboardLoading } = useDashboard({ startDate, endDate });
-    const subscriptionRevenue = dashboardMetrics?.faturamentoReal || 0;
 
-    const { data: financialMetrics, isLoading: metricsLoading } = useFinancialMetrics(startDate, endDate, subscriptionRevenue);
+    // Separate MRR (recurring) from setup (one-time) revenue
+    // MRR = dashboardMetrics.mrr * number of months in period
+    const months = dashboardMetrics ? Math.max(1, Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24 * 30))) : 1;
+    const mrrRevenue = (dashboardMetrics?.mrr || 0) * months;
+
+    // Setup = faturamentoReal - mrrRevenue (the difference is one-time payments)
+    const faturamentoReal = dashboardMetrics?.faturamentoReal || 0;
+    const setupRevenue = Math.max(0, faturamentoReal - mrrRevenue);
+
+    const { data: financialMetrics, isLoading: metricsLoading } = useFinancialMetrics(startDate, endDate, mrrRevenue, setupRevenue);
     const { data: cashFlowData, isLoading: cashFlowLoading } = useCashFlowHistory(startDate, endDate);
 
     const isLoading = dashboardLoading || metricsLoading;
 
-    // Build DRE
+    // Build DRE with 3 revenue categories
     const dreItems: DREItem[] = financialMetrics ? [
         { label: 'Receita Bruta', value: financialMetrics.totalRevenue, indent: 0, isTotal: true },
-        { label: 'Assinaturas', value: financialMetrics.subscriptionRevenue, indent: 1 },
-        { label: 'Outras Receitas', value: financialMetrics.otherRevenue, indent: 1 },
+        { label: 'Assinaturas (MRR)', value: financialMetrics.subscriptionRevenue, indent: 1 },
+        { label: 'Setup / Pagamentos Únicos', value: financialMetrics.setupRevenue, indent: 1 },
+        { label: 'Outras Receitas (Manual)', value: financialMetrics.otherRevenue, indent: 1 },
         { label: '(-) Custos de Aquisição (CAC)', value: -financialMetrics.cacExpenses, indent: 0 },
         { label: '(=) Lucro Bruto', value: financialMetrics.grossProfit, indent: 0, isSubtotal: true },
         { label: '(-) Despesas Operacionais', value: -financialMetrics.operationalExpenses, indent: 0 },

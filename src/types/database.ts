@@ -130,8 +130,9 @@ export interface CategoryRule {
 
 export interface FinancialMetrics {
   totalRevenue: number;
-  subscriptionRevenue: number;
-  otherRevenue: number;
+  subscriptionRevenue: number;  // MRR - receitas recorrentes
+  setupRevenue: number;         // Pagamentos únicos (setup)
+  otherRevenue: number;         // Lançamentos manuais
   totalExpenses: number;
   cacExpenses: number;
   operationalExpenses: number;

@@ -267,9 +267,14 @@ export const useDeleteCategoryRule = () => {
 // Financial Metrics Hook
 // ============================================
 
-export const useFinancialMetrics = (startDate: Date, endDate: Date, subscriptionRevenue: number) => {
+export const useFinancialMetrics = (
+    startDate: Date,
+    endDate: Date,
+    mrrRevenue: number,    // Receita recorrente (MRR acumulado)
+    setupRevenue: number   // Receita de setup/pagamentos únicos
+) => {
     return useQuery({
-        queryKey: ['financial-metrics', startDate.toISOString(), endDate.toISOString(), subscriptionRevenue],
+        queryKey: ['financial-metrics', startDate.toISOString(), endDate.toISOString(), mrrRevenue, setupRevenue],
         queryFn: async (): Promise<FinancialMetrics> => {
             const { data: transactions, error } = await supabase
                 .from('transactions')
@@ -285,11 +290,15 @@ export const useFinancialMetrics = (startDate: Date, endDate: Date, subscription
             const revenueTransactions = txns.filter(t => t.type === 'revenue');
             const expenseTransactions = txns.filter(t => t.type === 'expense');
 
-            // Other revenue = revenue transactions EXCLUDING subscription (already in subscriptionRevenue)
+            // Other revenue = revenue transactions EXCLUDING subscription (already in mrrRevenue)
+            // These are manual entries like service, consulting, other_revenue
             const otherRevenue = revenueTransactions
                 .filter(t => t.category !== 'subscription')
                 .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-            const totalRevenue = subscriptionRevenue + otherRevenue;
+
+            // Total revenue = MRR + Setup + Other manual entries
+            const subscriptionRevenue = mrrRevenue;
+            const totalRevenue = mrrRevenue + setupRevenue + otherRevenue;
 
             const totalExpenses = expenseTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
             const cacExpenses = expenseTransactions
@@ -318,6 +327,7 @@ export const useFinancialMetrics = (startDate: Date, endDate: Date, subscription
             return {
                 totalRevenue,
                 subscriptionRevenue,
+                setupRevenue,
                 otherRevenue,
                 totalExpenses,
                 cacExpenses,
