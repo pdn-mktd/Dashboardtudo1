@@ -183,10 +183,11 @@ const calculateMetrics = (
   const ltv = ticketMedio * estimatedLifetimeMonths;
 
   // Faturamento Real - Calculate actual revenue received in the period
-  // Faturamento Real = MRR de cada mês + vendas únicas (produtos com payment_type='unico')
+  // Split into: recurring MRR and one-time setup payments
   const months = eachMonthOfInterval({ start: startDate, end: endDate });
 
-  let faturamentoReal = 0;
+  let mrrAccumulated = 0;  // MRR accumulated over all months
+  let setupRevenue = 0;     // One-time payments (setup)
 
   months.forEach(month => {
     const monthStart = startOfMonth(month);
@@ -194,7 +195,7 @@ const calculateMetrics = (
 
     // Use the same MRR calculation for consistency
     const monthlyMrr = calculateMrrAtDate(clients, addons, monthEnd);
-    faturamentoReal += monthlyMrr;
+    mrrAccumulated += monthlyMrr;
 
     // Add one-time sales (produtos únicos) - only clients that started in this month
     clients.forEach(client => {
@@ -203,7 +204,7 @@ const calculateMetrics = (
       if (!isRecurringProduct(client.products)) {
         const clientStartDate = parseISO(client.start_date);
         if (isWithinInterval(clientStartDate, { start: monthStart, end: monthEnd })) {
-          faturamentoReal += Number(client.products.price);
+          setupRevenue += Number(client.products.price);
         }
       }
     });
@@ -218,11 +219,14 @@ const calculateMetrics = (
       if (!isRecurringProduct(addon.products)) {
         const addonStartDate = parseISO(addon.start_date);
         if (isWithinInterval(addonStartDate, { start: monthStart, end: monthEnd })) {
-          faturamentoReal += Number(addon.products.price) * addon.quantity;
+          setupRevenue += Number(addon.products.price) * addon.quantity;
         }
       }
     });
   });
+
+  // Total faturamento = MRR + Setup
+  const faturamentoReal = mrrAccumulated + setupRevenue;
 
   // Payback Period = CAC / Ticket Médio (in months)
   const paybackPeriod = ticketMedio > 0 ? cac / ticketMedio : 0;
@@ -290,6 +294,8 @@ const calculateMetrics = (
     cac,
     ltv,
     faturamentoReal,
+    mrrAccumulated,  // MRR acumulado no período
+    setupRevenue,    // Receita de pagamentos únicos
     paybackPeriod,
     activeClients: activeClients.length,
     newClientsThisMonth,

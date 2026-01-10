@@ -53,14 +53,9 @@ export default function Financial() {
 
     const { data: dashboardMetrics, isLoading: dashboardLoading } = useDashboard({ startDate, endDate });
 
-    // Separate MRR (recurring) from setup (one-time) revenue
-    // MRR = dashboardMetrics.mrr * number of months in period
-    const months = dashboardMetrics ? Math.max(1, Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24 * 30))) : 1;
-    const mrrRevenue = (dashboardMetrics?.mrr || 0) * months;
-
-    // Setup = faturamentoReal - mrrRevenue (the difference is one-time payments)
-    const faturamentoReal = dashboardMetrics?.faturamentoReal || 0;
-    const setupRevenue = Math.max(0, faturamentoReal - mrrRevenue);
+    // Get separated revenue from dashboard metrics
+    const mrrRevenue = dashboardMetrics?.mrrAccumulated || 0;
+    const setupRevenue = dashboardMetrics?.setupRevenue || 0;
 
     const { data: financialMetrics, isLoading: metricsLoading } = useFinancialMetrics(startDate, endDate, mrrRevenue, setupRevenue);
     const { data: cashFlowData, isLoading: cashFlowLoading } = useCashFlowHistory(startDate, endDate);

@@ -59,6 +59,8 @@ export interface DashboardMetrics {
   cac: number;
   ltv: number;
   faturamentoReal: number;
+  mrrAccumulated: number;   // MRR acumulado no período
+  setupRevenue: number;     // Receita de pagamentos únicos
   paybackPeriod: number;
   activeClients: number;
   newClientsThisMonth: number;
