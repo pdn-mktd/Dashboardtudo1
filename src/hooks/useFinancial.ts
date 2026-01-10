@@ -437,6 +437,7 @@ export const useCashFlowHistory = (startDate: Date, endDate: Date) => {
             });
 
             // Add manual transactions (revenue and expenses)
+            // EXCLUDE subscription revenue as it's already calculated from clients
             typedTransactions.forEach(t => {
                 const monthKey = t.date.substring(0, 7); // YYYY-MM
                 if (!monthlyData[monthKey]) {
@@ -444,8 +445,10 @@ export const useCashFlowHistory = (startDate: Date, endDate: Date) => {
                 }
 
                 if (t.type === 'revenue') {
-                    // Add manual revenue entries
-                    monthlyData[monthKey].revenue += Math.abs(t.amount);
+                    // Only add non-subscription revenue entries (avoid duplication with MRR)
+                    if (t.category !== 'subscription') {
+                        monthlyData[monthKey].revenue += Math.abs(t.amount);
+                    }
                 } else if (t.type === 'expense') {
                     // Add expenses
                     monthlyData[monthKey].expenses += Math.abs(t.amount);
