@@ -2,3 +2,6 @@ project_id = "zjmmyhbbaaplvethtlbb"
 
 [functions.asaas-webhook]
 verify_jwt = false
+
+[functions.asaas-sync-extract]
+verify_jwt = true
