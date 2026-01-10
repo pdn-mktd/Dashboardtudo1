@@ -390,14 +390,20 @@ export const useCashFlowHistory = (startDate: Date, endDate: Date) => {
             });
 
             // Add subscription revenue (MRR) for each month
+            // Only count RECURRING products (mensal/anual), not one-time payments
             months.forEach(month => {
                 const monthKey = format(month, 'yyyy-MM');
                 const monthEnd = endOfMonth(month);
                 const monthStart = startOfMonth(month);
 
-                // Calculate MRR from active clients
+                // Calculate MRR from active clients with RECURRING products
                 typedClients.forEach(client => {
                     if (!client.products) return;
+
+                    // Only count recurring products
+                    const billingPeriod = client.products.billing_period;
+                    if (billingPeriod !== 'mensal' && billingPeriod !== 'anual') return;
+
                     const clientStartDate = parseISO(client.start_date);
 
                     // Check if client was active in this month
@@ -407,18 +413,22 @@ export const useCashFlowHistory = (startDate: Date, endDate: Date) => {
 
                     if (isActive) {
                         // Add monthly revenue
-                        const monthlyPrice = client.products.billing_period === 'anual'
+                        const monthlyPrice = billingPeriod === 'anual'
                             ? Number(client.products.price) / 12
                             : Number(client.products.price);
                         monthlyData[monthKey].revenue += monthlyPrice;
                     }
                 });
 
-                // Add addon revenue
+                // Add addon revenue (only recurring)
                 typedAddons.forEach(addon => {
                     if (!addon.products) return;
                     const client = typedClients.find(c => c.id === addon.client_id);
                     if (!client) return;
+
+                    // Only count recurring addons
+                    const billingPeriod = addon.products.billing_period;
+                    if (billingPeriod !== 'mensal' && billingPeriod !== 'anual') return;
 
                     const addonStartDate = parseISO(addon.start_date);
                     const addonEndDate = addon.end_date ? parseISO(addon.end_date) : null;
@@ -428,7 +438,7 @@ export const useCashFlowHistory = (startDate: Date, endDate: Date) => {
                             (addon.status === 'cancelled' && addonEndDate && addonEndDate > monthStart));
 
                     if (isActive) {
-                        const monthlyPrice = addon.products.billing_period === 'anual'
+                        const monthlyPrice = billingPeriod === 'anual'
                             ? Number(addon.products.price) / 12
                             : Number(addon.products.price);
                         monthlyData[monthKey].revenue += monthlyPrice * addon.quantity;
