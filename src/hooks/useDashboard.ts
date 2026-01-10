@@ -47,19 +47,26 @@ const wasAddonActiveAt = (addon: ClientAddon, date: Date): boolean => {
 };
 
 // Calculate MRR for a specific date, including add-ons (only recurring products)
+// IMPORTANT: Excludes clients with asaas_customer_id (their revenue comes from webhook)
 const calculateMrrAtDate = (clients: Client[], addons: ClientAddon[], date: Date): number => {
   let mrr = 0;
 
-  // Main product MRR (only recurring)
+  // Main product MRR (only recurring, exclude Asaas-linked clients)
   clients.forEach(client => {
+    // Skip clients with Asaas integration (their revenue comes from webhook)
+    if (client.asaas_customer_id) return;
+
     if (wasClientActiveAt(client, date) && client.products && isRecurringProduct(client.products)) {
       mrr += getMonthlyPrice(Number(client.products.price), client.products.billing_period);
     }
   });
 
-  // Add-ons MRR (only recurring)
+  // Add-ons MRR (only recurring, exclude addons of Asaas-linked clients)
   addons.forEach(addon => {
     const client = clients.find(c => c.id === addon.client_id);
+    // Skip if client has Asaas integration
+    if (client?.asaas_customer_id) return;
+
     if (client && wasClientActiveAt(client, date) && wasAddonActiveAt(addon, date) && addon.products && isRecurringProduct(addon.products)) {
       const addonMonthlyPrice = getMonthlyPrice(Number(addon.products.price), addon.products.billing_period);
       mrr += addonMonthlyPrice * addon.quantity;
@@ -195,8 +202,10 @@ const calculateMetrics = (
     faturamentoReal += monthlyMrr;
 
     // Add one-time sales (produtos únicos) - only clients that started in this month
+    // Skip Asaas-linked clients (their revenue comes from webhook)
     clients.forEach(client => {
       if (!client.products) return;
+      if (client.asaas_customer_id) return; // Skip Asaas clients
       // Only count non-recurring products (one-time payments)
       if (!isRecurringProduct(client.products)) {
         const clientStartDate = parseISO(client.start_date);
@@ -225,17 +234,19 @@ const calculateMetrics = (
   // Payback Period = CAC / Ticket Médio (in months)
   const paybackPeriod = ticketMedio > 0 ? cac / ticketMedio : 0;
 
-  // New MRR - MRR from new clients in the period
+  // New MRR - MRR from new clients in the period (exclude Asaas clients)
   let newMrr = 0;
   newClientsInPeriod.forEach(client => {
+    if (client.asaas_customer_id) return; // Skip Asaas clients
     if (client.products && isRecurringProduct(client.products)) {
       newMrr += getMonthlyPrice(Number(client.products.price), client.products.billing_period);
     }
   });
 
-  // Churned MRR - MRR lost from churned clients in the period
+  // Churned MRR - MRR lost from churned clients in the period (exclude Asaas clients)
   let churnedMrr = 0;
   churnedInPeriod.forEach(client => {
+    if (client.asaas_customer_id) return; // Skip Asaas clients
     if (client.products && isRecurringProduct(client.products)) {
       churnedMrr += getMonthlyPrice(Number(client.products.price), client.products.billing_period);
     }
@@ -539,9 +550,10 @@ export const useTotalRevenueHistory = (startDate?: Date, endDate?: Date) => {
         let recorrente = 0;
         let unico = 0;
 
-        // Calculate revenue from clients
+        // Calculate revenue from clients (exclude Asaas-linked clients)
         typedClients.forEach(client => {
           if (!client.products) return;
+          if (client.asaas_customer_id) return; // Skip Asaas clients - their revenue comes from transactions
           const clientStartDate = parseISO(client.start_date);
           const isRecurring = isRecurringProduct(client.products);
 
@@ -562,11 +574,12 @@ export const useTotalRevenueHistory = (startDate?: Date, endDate?: Date) => {
           }
         });
 
-        // Add-ons revenue
+        // Add-ons revenue (exclude Asaas-linked clients)
         typedAddons.forEach(addon => {
           if (!addon.products) return;
           const client = typedClients.find(c => c.id === addon.client_id);
           if (!client || !wasClientActiveAt(client, monthEnd)) return;
+          if (client.asaas_customer_id) return; // Skip Asaas clients
 
           const addonStartDate = parseISO(addon.start_date);
           const isRecurring = isRecurringProduct(addon.products);
