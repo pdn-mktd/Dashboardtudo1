@@ -9,7 +9,7 @@ export const useClients = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('clients')
-        .select('*, products(*), client_addons(*, products(*))')
+        .select('*, products(*), client_addons(*, products(*)), client_pauses(*)')
         .order('created_at', { ascending: false });
       
       if (error) throw error;

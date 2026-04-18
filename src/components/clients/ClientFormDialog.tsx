@@ -36,7 +36,7 @@ const formSchema = z.object({
   name: z.string().min(1, 'Nome é obrigatório'),
   email: z.string().email('Email inválido'),
   product_id: z.string().min(1, 'Produto é obrigatório'),
-  status: z.enum(['active', 'churned']),
+  status: z.enum(['active', 'paused', 'churned']),
   start_date: z.string().min(1, 'Data de entrada é obrigatória'),
   plan_change_date: z.string().optional(),
   churn_date: z.string().optional(),
@@ -151,7 +151,7 @@ export function ClientFormDialog({ open, onOpenChange, client }: ClientFormDialo
       name: data.name,
       email: data.email,
       product_id: data.product_id,
-      status: data.status as 'active' | 'churned',
+      status: data.status as 'active' | 'paused' | 'churned',
       start_date: data.start_date,
       churn_date: data.status === 'churned' && data.churn_date ? data.churn_date : null,
       asaas_customer_id: data.asaas_customer_id || null,
@@ -292,6 +292,7 @@ export function ClientFormDialog({ open, onOpenChange, client }: ClientFormDialo
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="active">Ativo</SelectItem>
+                        <SelectItem value="paused">Pausado</SelectItem>
                         <SelectItem value="churned">Cancelado</SelectItem>
                       </SelectContent>
                     </Select>

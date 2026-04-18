@@ -25,7 +25,7 @@ export interface Client {
   id: string;
   name: string;
   email: string;
-  status: 'active' | 'churned';
+  status: 'active' | 'paused' | 'churned';
   start_date: string;
   churn_date: string | null;
   churn_reason: string | null;
@@ -41,6 +41,17 @@ export interface Client {
   updated_at: string;
   products?: Product;
   client_addons?: ClientAddon[];
+  client_pauses?: ClientPause[];
+}
+
+export interface ClientPause {
+  id: string;
+  client_id: string;
+  start_date: string;
+  end_date: string | null;
+  reason: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Expense {
@@ -63,6 +74,7 @@ export interface DashboardMetrics {
   setupRevenue: number;     // Receita de pagamentos únicos
   paybackPeriod: number;
   activeClients: number;
+  pausedClients: number;
   newClientsThisMonth: number;
   churnedThisMonth: number;
   arr: number;

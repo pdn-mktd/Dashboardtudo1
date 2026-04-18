@@ -394,7 +394,7 @@ export default function Dashboard() {
               <KPICard
                 title="Clientes Ativos"
                 value={String(metrics?.activeClients || 0)}
-                subtitle={`+${metrics?.newClientsThisMonth || 0} no período`}
+                subtitle={`+${metrics?.newClientsThisMonth || 0} novos | ${metrics?.pausedClients || 0} pausados`}
                 icon={Users}
                 variant="success"
                 delay={100}

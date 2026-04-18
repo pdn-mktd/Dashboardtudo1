@@ -292,8 +292,11 @@ export function ClientRankingTable({ clients }: ClientRankingTableProps) {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={client.status === 'active' ? 'default' : 'destructive'}>
-                          {client.status === 'active' ? 'Ativo' : 'Cancelado'}
+                        <Badge 
+                          variant={client.status === 'active' ? 'default' : client.status === 'paused' ? 'secondary' : 'destructive'}
+                          className={client.status === 'paused' ? 'bg-amber-500/10 text-amber-600 border-amber-500/20' : ''}
+                        >
+                          {client.status === 'active' ? 'Ativo' : client.status === 'paused' ? 'Pausado' : 'Cancelado'}
                         </Badge>
                       </TableCell>
                       <TableCell>{formatTenure(client.tenureMonths)}</TableCell>

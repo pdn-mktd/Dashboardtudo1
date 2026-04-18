@@ -36,8 +36,26 @@ export const isRecurringProduct = (product: { payment_type?: string } | undefine
   return !product || product.payment_type !== 'unico';
 };
 
-// Check if client was active at a specific date
+// Check if client was active at a specific date (excludes paused clients)
+// For MRR/revenue calculations - paused clients do NOT contribute
 export const wasClientActiveAt = (client: Client, date: Date): boolean => {
+  const clientStartDate = parseISO(client.start_date);
+  if (clientStartDate > date) return false;
+
+  // Paused clients are NOT active for MRR purposes
+  if (client.status === 'paused') return false;
+
+  if (client.status === 'churned' && client.churn_date) {
+    const churnDate = parseISO(client.churn_date);
+    return churnDate > date;
+  }
+
+  return client.status === 'active';
+};
+
+// Check if client is "enrolled" (active OR paused, but NOT churned)
+// Used for counting total enrolled clients, excluding only churn
+export const isClientEnrolled = (client: Client, date: Date): boolean => {
   const clientStartDate = parseISO(client.start_date);
   if (clientStartDate > date) return false;
 
@@ -46,7 +64,7 @@ export const wasClientActiveAt = (client: Client, date: Date): boolean => {
     return churnDate > date;
   }
 
-  return client.status === 'active';
+  return client.status === 'active' || client.status === 'paused';
 };
 
 // Check if addon was active at a specific date
@@ -95,18 +113,21 @@ const calculateMetrics = (
   startDate: Date,
   endDate: Date
 ): DashboardMetrics => {
-  // Active clients at the end of the period (only count those with recurring products for MRR purposes)
+  // Active clients at the end of the period (excludes paused - they don't contribute to MRR)
   const activeClients = clients.filter(c => wasClientActiveAt(c, endDate));
   const activeClientsWithRecurring = activeClients.filter(c => c.products && isRecurringProduct(c.products));
+  
+  // Paused clients (enrolled but not contributing to MRR)
+  const pausedClients = clients.filter(c => c.status === 'paused' && isClientEnrolled(c, endDate));
 
   // Calculate MRR at end of period (all active clients with recurring products)
-  // MRR = Potential monthly revenue from ALL active subscriptions
+  // MRR = Potential monthly revenue from ALL active subscriptions (excludes paused)
   const mrr = calculateMrrAtDate(clients, addons, endDate);
 
   // ARR = MRR * 12
   const arr = mrr * 12;
 
-  // Ticket Médio - MRR divided by active clients with recurring products
+  // Ticket Médio - MRR divided by active clients with recurring products (excludes paused)
   const ticketMedio = activeClientsWithRecurring.length > 0 ? mrr / activeClientsWithRecurring.length : 0;
 
   const newClientsInPeriod = clients.filter(c => {
@@ -314,6 +335,7 @@ const calculateMetrics = (
     setupRevenue,    // Receita de pagamentos únicos
     paybackPeriod,
     activeClients: activeClients.length,
+    pausedClients: pausedClients.length,
     newClientsThisMonth,
     churnedThisMonth,
     ltvCacRatio,

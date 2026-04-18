@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Pencil, Trash2, Users, Package, Download } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Package, Download, Pause, Play } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -23,6 +23,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { ClientFormDialog } from '@/components/clients/ClientFormDialog';
 import { ClientAddonsDialog } from '@/components/clients/ClientAddonsDialog';
+import { ClientPauseDialog } from '@/components/clients/ClientPauseDialog';
+import { ClientReactivateDialog } from '@/components/clients/ClientReactivateDialog';
 import { useClients, useDeleteClient } from '@/hooks/useClients';
 import { Client } from '@/types/database';
 import { formatDate, formatCurrency } from '@/lib/formatters';
@@ -45,8 +47,22 @@ export default function Clients() {
   const [clientToDelete, setClientToDelete] = useState<Client | undefined>();
   const [addonsDialogOpen, setAddonsDialogOpen] = useState(false);
   const [clientForAddons, setClientForAddons] = useState<Client | undefined>();
+  const [pauseDialogOpen, setPauseDialogOpen] = useState(false);
+  const [clientForPause, setClientForPause] = useState<Client | undefined>();
+  const [reactivateDialogOpen, setReactivateDialogOpen] = useState(false);
+  const [clientForReactivate, setClientForReactivate] = useState<Client | undefined>();
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+
+  const handlePause = (client: Client) => {
+    setClientForPause(client);
+    setPauseDialogOpen(true);
+  };
+
+  const handleReactivate = (client: Client) => {
+    setClientForReactivate(client);
+    setReactivateDialogOpen(true);
+  };
 
   const handleEdit = (client: Client) => {
     setSelectedClient(client);
@@ -123,7 +139,7 @@ export default function Clients() {
         client.products?.name || '-',
         addonsDetail,
         activeAddons.length.toString(),
-        client.status === 'active' ? 'Ativo' : 'Cancelado',
+        client.status === 'active' ? 'Ativo' : client.status === 'paused' ? 'Pausado' : 'Cancelado',
         formatDate(client.start_date),
         client.churn_date ? formatDate(client.churn_date) : '-',
         client.churn_reason || '-',
@@ -244,20 +260,30 @@ export default function Clients() {
                             <span className="text-muted-foreground text-sm">-</span>
                           )}
                         </TableCell>
-                        <TableCell className="font-medium text-success">
-                          {formatCurrency(clientMrr)}/mês
+                        <TableCell className={`font-medium ${client.status === 'paused' ? 'text-amber-500' : 'text-success'}`}>
+                          {client.status === 'paused' ? (
+                            <span className="text-amber-500 text-sm">⏸️ Pausado</span>
+                          ) : (
+                            <>{formatCurrency(clientMrr)}/mês</>
+                          )}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {formatDate(client.start_date)}
                         </TableCell>
                         <TableCell>
                           <Badge
-                            variant={client.status === 'active' ? 'default' : 'destructive'}
-                            className={client.status === 'active' ? 'bg-success/10 text-success border-success/20' : ''}
+                            variant={client.status === 'active' ? 'default' : client.status === 'paused' ? 'secondary' : 'destructive'}
+                            className={
+                              client.status === 'active' 
+                                ? 'bg-success/10 text-success border-success/20' 
+                                : client.status === 'paused'
+                                  ? 'bg-amber-500/10 text-amber-600 border-amber-500/20'
+                                  : ''
+                            }
                           >
-                            {client.status === 'active' ? 'Ativo' : 'Cancelado'}
+                            {client.status === 'active' ? 'Ativo' : client.status === 'paused' ? 'Pausado' : 'Cancelado'}
                           </Badge>
-                          {client.churn_date && (
+                          {client.churn_date && client.status === 'churned' && (
                             <span className="text-xs text-muted-foreground ml-2">
                               em {formatDate(client.churn_date)}
                             </span>
@@ -279,6 +305,40 @@ export default function Clients() {
                                 <TooltipContent>Gerenciar Adicionais</TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
+                            {client.status === 'active' && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handlePause(client)}
+                                      className="text-amber-500 hover:text-amber-600"
+                                    >
+                                      <Pause className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Pausar Assinatura</TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
+                            {client.status === 'paused' && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleReactivate(client)}
+                                      className="text-emerald-500 hover:text-emerald-600"
+                                    >
+                                      <Play className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Reativar Assinatura</TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
                             <Button
                               variant="ghost"
                               size="icon"
@@ -324,6 +384,22 @@ export default function Clients() {
           open={addonsDialogOpen}
           onOpenChange={setAddonsDialogOpen}
           client={clientForAddons}
+        />
+      )}
+
+      {clientForPause && (
+        <ClientPauseDialog
+          open={pauseDialogOpen}
+          onOpenChange={setPauseDialogOpen}
+          client={clientForPause}
+        />
+      )}
+
+      {clientForReactivate && (
+        <ClientReactivateDialog
+          open={reactivateDialogOpen}
+          onOpenChange={setReactivateDialogOpen}
+          client={clientForReactivate}
         />
       )}
 
