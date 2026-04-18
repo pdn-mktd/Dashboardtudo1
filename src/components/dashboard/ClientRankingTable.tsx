@@ -50,6 +50,16 @@ const isRecurringProduct = (product: { payment_type?: string } | undefined | nul
   return !product || product.payment_type !== 'unico';
 };
 
+// Helper to calculate monthly price from billing period
+const getMonthlyPrice = (price: number, billingPeriod: string): number => {
+  switch (billingPeriod) {
+    case 'anual': return price / 12;
+    case 'semestral': return price / 6;
+    case 'trimestral': return price / 3;
+    default: return price; // mensal
+  }
+};
+
 export function ClientRankingTable({ clients }: ClientRankingTableProps) {
   const [filter, setFilter] = useState<FilterType>('all');
   const [sortBy, setSortBy] = useState<SortType>('ltv');
@@ -62,7 +72,7 @@ export function ClientRankingTable({ clients }: ClientRankingTableProps) {
     // Main product (only recurring)
     if (client.products && isRecurringProduct(client.products)) {
       const price = client.products.price;
-      monthly += client.products.billing_period === 'anual' ? price / 12 : price;
+      monthly += getMonthlyPrice(price, client.products.billing_period);
     }
     
     // Add-ons (only active and recurring ones)
@@ -70,7 +80,7 @@ export function ClientRankingTable({ clients }: ClientRankingTableProps) {
       client.client_addons.forEach(addon => {
         if (addon.status === 'active' && addon.products && isRecurringProduct(addon.products)) {
           const addonPrice = addon.products.price * addon.quantity;
-          monthly += addon.products.billing_period === 'anual' ? addonPrice / 12 : addonPrice;
+          monthly += getMonthlyPrice(addonPrice, addon.products.billing_period);
         }
       });
     }
@@ -104,9 +114,7 @@ export function ClientRankingTable({ clients }: ClientRankingTableProps) {
       if (isRecurringProduct(client.products)) {
         // Recorrente: × Meses de Casa
         const tenureMonths = calculateTenureMonths(client);
-        const baseMonthly = client.products.billing_period === 'anual' 
-          ? client.products.price / 12 
-          : client.products.price;
+        const baseMonthly = getMonthlyPrice(client.products.price, client.products.billing_period);
         totalLTV += baseMonthly * tenureMonths;
       } else {
         // Pagamento único: soma apenas uma vez
@@ -126,9 +134,7 @@ export function ClientRankingTable({ clients }: ClientRankingTableProps) {
               : clientEndDate;
             
             const addonMonths = Math.max(1, differenceInMonths(addonEnd, addonStart));
-            const addonMonthly = addon.products.billing_period === 'anual'
-              ? (addon.products.price * addon.quantity) / 12
-              : addon.products.price * addon.quantity;
+            const addonMonthly = getMonthlyPrice(addon.products.price * addon.quantity, addon.products.billing_period);
             
             totalLTV += addonMonthly * addonMonths;
           } else {

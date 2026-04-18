@@ -10,8 +10,24 @@ interface UseDashboardParams {
 }
 
 // Helper to calculate monthly price from a product (only for recurring products)
+// Maps billing_period to monthly equivalent for MRR calculations
 export const getMonthlyPrice = (price: number, billingPeriod: string): number => {
-  return billingPeriod === 'anual' ? price / 12 : price;
+  switch (billingPeriod) {
+    case 'anual': return price / 12;
+    case 'semestral': return price / 6;
+    case 'trimestral': return price / 3;
+    default: return price; // mensal
+  }
+};
+
+// Helper to get how many months a billing period spans
+export const getBillingPeriodMonths = (billingPeriod: string): number => {
+  switch (billingPeriod) {
+    case 'anual': return 12;
+    case 'semestral': return 6;
+    case 'trimestral': return 3;
+    default: return 1; // mensal
+  }
 };
 
 // Check if product is recurring (for MRR calculations)
@@ -548,29 +564,36 @@ export const useTotalRevenueHistory = (startDate?: Date, endDate?: Date) => {
         let unico = 0;
 
         // Calculate revenue from clients
+        // Cash flow shows ACTUAL revenue received (full price on payment months)
+        // Payment months determined by billing_period interval from start_date
         typedClients.forEach(client => {
           if (!client.products) return;
           const clientStartDate = parseISO(client.start_date);
           const isRecurring = isRecurringProduct(client.products);
 
-          // Check if client started in this month (first payment)
-          if (isWithinInterval(clientStartDate, { start: monthStart, end: monthEnd })) {
-            if (isRecurring) {
-              // New recurring client - pays full price (annual pays full, monthly pays monthly)
-              recorrente += Number(client.products.price);
-            } else {
-              // One-time payment
+          if (!isRecurring) {
+            // One-time payment: only on start month
+            if (isWithinInterval(clientStartDate, { start: monthStart, end: monthEnd })) {
               unico += Number(client.products.price);
             }
-          } else if (wasClientActiveAt(client, monthEnd) && clientStartDate < monthStart && isRecurring) {
-            // Existing active client with recurring product - pays monthly
-            if (client.products.billing_period === 'mensal') {
+          } else if (wasClientActiveAt(client, monthEnd) && clientStartDate <= monthEnd) {
+            // Recurring: check if this month is a payment month
+            // First payment is on start month, then every N months (based on billing_period)
+            if (isWithinInterval(clientStartDate, { start: monthStart, end: monthEnd })) {
+              // First month - always pays
               recorrente += Number(client.products.price);
+            } else if (clientStartDate < monthStart) {
+              // Existing client - check if this month aligns with billing cycle
+              const periodMonths = getBillingPeriodMonths(client.products.billing_period);
+              const monthsSinceStart = differenceInMonths(monthStart, startOfMonth(clientStartDate));
+              if (monthsSinceStart % periodMonths === 0) {
+                recorrente += Number(client.products.price);
+              }
             }
           }
         });
 
-        // Add-ons revenue
+        // Add-ons revenue (same logic)
         typedAddons.forEach(addon => {
           if (!addon.products) return;
           const client = typedClients.find(c => c.id === addon.client_id);
@@ -579,17 +602,19 @@ export const useTotalRevenueHistory = (startDate?: Date, endDate?: Date) => {
           const addonStartDate = parseISO(addon.start_date);
           const isRecurring = isRecurringProduct(addon.products);
 
-          // Check if addon started in this month
-          if (isWithinInterval(addonStartDate, { start: monthStart, end: monthEnd })) {
-            if (isRecurring) {
-              recorrente += Number(addon.products.price) * addon.quantity;
-            } else {
+          if (!isRecurring) {
+            if (isWithinInterval(addonStartDate, { start: monthStart, end: monthEnd })) {
               unico += Number(addon.products.price) * addon.quantity;
             }
-          } else if (wasAddonActiveAt(addon, monthEnd) && addonStartDate < monthStart && isRecurring) {
-            // Existing active addon - pays monthly
-            if (addon.products.billing_period === 'mensal') {
+          } else if (wasAddonActiveAt(addon, monthEnd) && addonStartDate <= monthEnd) {
+            if (isWithinInterval(addonStartDate, { start: monthStart, end: monthEnd })) {
               recorrente += Number(addon.products.price) * addon.quantity;
+            } else if (addonStartDate < monthStart) {
+              const periodMonths = getBillingPeriodMonths(addon.products.billing_period);
+              const monthsSinceStart = differenceInMonths(monthStart, startOfMonth(addonStartDate));
+              if (monthsSinceStart % periodMonths === 0) {
+                recorrente += Number(addon.products.price) * addon.quantity;
+              }
             }
           }
         });

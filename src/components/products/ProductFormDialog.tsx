@@ -31,7 +31,7 @@ import { useCreateProduct, useUpdateProduct } from '@/hooks/useProducts';
 const formSchema = z.object({
   name: z.string().min(1, 'Nome é obrigatório'),
   price: z.string().min(1, 'Preço é obrigatório'),
-  billing_period: z.enum(['mensal', 'anual', 'unico']),
+  billing_period: z.enum(['mensal', 'trimestral', 'semestral', 'anual', 'unico']),
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -59,7 +59,7 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
   useEffect(() => {
     if (product) {
       // Map old payment_type=unico to billing_period=unico for backwards compatibility
-      let billingPeriod: 'mensal' | 'anual' | 'unico' = product.billing_period;
+      let billingPeriod: 'mensal' | 'trimestral' | 'semestral' | 'anual' | 'unico' = product.billing_period;
       if (product.payment_type === 'unico') {
         billingPeriod = 'unico';
       }
@@ -83,7 +83,7 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
     const productData = {
       name: data.name,
       price: parseFloat(data.price),
-      billing_period: (isOneTime ? 'mensal' : data.billing_period) as 'mensal' | 'anual',
+      billing_period: (isOneTime ? 'mensal' : data.billing_period) as 'mensal' | 'trimestral' | 'semestral' | 'anual',
       payment_type: (isOneTime ? 'unico' : 'recorrente') as 'recorrente' | 'unico',
     };
 
@@ -152,6 +152,8 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                     </FormControl>
                     <SelectContent>
                       <SelectItem value="mensal">Mensal (Recorrente)</SelectItem>
+                      <SelectItem value="trimestral">Trimestral (Recorrente)</SelectItem>
+                      <SelectItem value="semestral">Semestral (Recorrente)</SelectItem>
                       <SelectItem value="anual">Anual (Recorrente)</SelectItem>
                       <SelectItem value="unico">Pagamento Único (Setup/Serviço)</SelectItem>
                     </SelectContent>

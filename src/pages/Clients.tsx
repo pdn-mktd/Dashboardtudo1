@@ -26,6 +26,7 @@ import { ClientAddonsDialog } from '@/components/clients/ClientAddonsDialog';
 import { useClients, useDeleteClient } from '@/hooks/useClients';
 import { Client } from '@/types/database';
 import { formatDate, formatCurrency } from '@/lib/formatters';
+import { getMonthlyPrice } from '@/hooks/useDashboard';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Tooltip,
@@ -86,18 +87,14 @@ export default function Clients() {
 
     // Main product - only if recurring
     if (client.products && isRecurringProduct(client.products)) {
-      mrr += client.products.billing_period === 'anual'
-        ? Number(client.products.price) / 12
-        : Number(client.products.price);
+      mrr += getMonthlyPrice(Number(client.products.price), client.products.billing_period);
     }
 
     // Active addons - only recurring ones
     const activeAddons = client.client_addons?.filter(a => a.status === 'active') || [];
     activeAddons.forEach(addon => {
       if (addon.products && isRecurringProduct(addon.products)) {
-        const addonMonthly = addon.products.billing_period === 'anual'
-          ? Number(addon.products.price) / 12
-          : Number(addon.products.price);
+        const addonMonthly = getMonthlyPrice(Number(addon.products.price), addon.products.billing_period);
         mrr += addonMonthly * addon.quantity;
       }
     });

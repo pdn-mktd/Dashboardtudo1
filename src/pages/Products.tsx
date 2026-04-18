@@ -120,7 +120,11 @@ export default function Products() {
                           ? 'Único' 
                           : product.billing_period === 'mensal' 
                             ? 'Mensal' 
-                            : 'Anual'}
+                            : product.billing_period === 'trimestral'
+                              ? 'Trimestral'
+                              : product.billing_period === 'semestral'
+                                ? 'Semestral'
+                                : 'Anual'}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground">

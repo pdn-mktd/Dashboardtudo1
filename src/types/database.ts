@@ -2,7 +2,7 @@ export interface Product {
   id: string;
   name: string;
   price: number;
-  billing_period: 'mensal' | 'anual';
+  billing_period: 'mensal' | 'trimestral' | 'semestral' | 'anual';
   payment_type: 'recorrente' | 'unico';
   created_at: string;
   updated_at: string;
